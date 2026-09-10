@@ -1,8 +1,8 @@
 ﻿// ============================================
-// 配置常量（从 游戏规则.md 提取）
+// 配置常量
 // ============================================
 
-import { Attributes } from './types';
+import { Attributes, Grade } from './types';
 
 // ---------- 初始值 ----------
 export const INITIAL_ATTRIBUTES: Attributes = {
@@ -18,16 +18,17 @@ export const SCHEMA_VERSION = '1.0';
 export const RULES_VERSION = '1.0';
 
 // ---------- 分档阈值 ----------
-export const GRADE_THRESHOLDS = {
+export const GRADE_THRESHOLDS: Record<keyof Attributes, { A: number; B: number; C: number; D: number }> = {
   academics: { A: 12, B: 6, C: 0, D: -Infinity },
   social: { A: 12, B: 6, C: 0, D: -Infinity },
   energy: { A: 7, B: 3, C: 0, D: -Infinity },
   money: { A: 800, B: 400, C: 0, D: -Infinity },
 };
 
-export type Grade = 'A' | 'B' | 'C' | 'D';
-
-export function getGrade(value: number, thresholds: { A: number; B: number; C: number; D: number }): Grade {
+export function getGrade(
+  value: number,
+  thresholds: { A: number; B: number; C: number; D: number }
+): Grade {
   if (value >= thresholds.A) return 'A';
   if (value >= thresholds.B) return 'B';
   if (value >= thresholds.C) return 'C';
@@ -35,7 +36,7 @@ export function getGrade(value: number, thresholds: { A: number; B: number; C: n
 }
 
 // ---------- 单次增减范围 ----------
-export const EFFECT_RANGES = {
+export const EFFECT_RANGES: Record<keyof Attributes, { min: number; max: number }> = {
   academics: { min: -2, max: 3 },
   social: { min: -2, max: 3 },
   energy: { min: -2, max: 2 },

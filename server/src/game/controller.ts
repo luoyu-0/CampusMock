@@ -1,19 +1,20 @@
 ﻿// ============================================
-// Interface Controller
+// 接口控制器
 // ============================================
 
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  GameSnapshot,
+  Snapshot,
   GenerateEventRequest,
-  GenerateEventResponse,
   ChooseOptionRequest,
-  ChooseOptionResponse,
   GenerateEndingRequest,
-  GenerateEndingResponse,
+  SuccessResponse,
   ErrorResponse,
-  EventData,
+  GameEvent,
+  Attributes,
+  Grade,
+  Ending,
 } from './types';
 import {
   validateSnapshot,
@@ -23,12 +24,11 @@ import {
   applyEffects,
   getGrades,
   validateEventEffects,
-  createInitialSnapshot,
 } from './service';
 import { TOTAL_DAYS } from './constants';
 
-// ============ Mock AI (TODO: replace with member C) ============
-async function mockGenerateEvent(day: number, attributes: any, history: any[]): Promise<EventData> {
+// ============ Mock AI（待成员C替换） ============
+async function mockGenerateEvent(day: number, attributes: Attributes, history: any[]): Promise<GameEvent> {
   return {
     id: uuidv4(),
     day,
@@ -57,7 +57,7 @@ async function mockGenerateEvent(day: number, attributes: any, history: any[]): 
   };
 }
 
-async function mockGenerateEnding(attributes: any, grades: any, history: any[]): Promise<any> {
+async function mockGenerateEnding(attributes: Attributes, grades: Record<keyof Attributes, Grade>, history: any[]): Promise<Omit<Ending, 'finalAttributes' | 'grades'>> {
   return {
     title: 'First Semester Summary',
     description: 'You had a fulfilling college life...',
@@ -66,7 +66,7 @@ async function mockGenerateEnding(attributes: any, grades: any, history: any[]):
   };
 }
 
-// ============ Error Response ============
+// ============ 工具：错误响应 ============
 function sendError(
   res: Response,
   requestId: string,
@@ -81,11 +81,8 @@ function sendError(
   res.status(400).json(response);
 }
 
-// ============ Success Response ============
-function sendSuccess<T extends { requestId: string; baseRevision: number; snapshot: GameSnapshot }>(
-  res: Response,
-  data: T
-) {
+// ============ 工具：成功响应 ============
+function sendSuccess(res: Response, data: SuccessResponse) {
   res.json(data);
 }
 
@@ -97,7 +94,7 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, 'unknown', 'MISSING_REQUEST_ID', 'Missing requestId', false);
   }
   if (!snapshot) {
-    return sendError(res, requestId || 'unknown', 'MISSING_SNAPSHOT', 'Missing snapshot', false);
+    return sendError(res, requestId, 'MISSING_SNAPSHOT', 'Missing snapshot', false);
   }
 
   const validation = validateSnapshot(snapshot);
@@ -105,8 +102,8 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_SNAPSHOT', validation.reason || 'Snapshot validation failed', false);
   }
 
-  if (snapshot.currentEvent && snapshot.phase === 'awaitingChoice') {
-    const response: GenerateEventResponse = {
+  if (snapshot.currentEvent && snapshot.phase === 'pendingChoice') {
+    const response: SuccessResponse = {
       requestId,
       baseRevision: snapshot.revision,
       snapshot: { ...snapshot },
@@ -133,11 +130,11 @@ export async function generateEvent(req: Request, res: Response) {
     let newSnapshot = incrementRevision(snapshot);
     newSnapshot = {
       ...newSnapshot,
-      phase: 'awaitingChoice',
+      phase: 'pendingChoice',
       currentEvent: eventData,
     };
 
-    const response: GenerateEventResponse = {
+    const response: SuccessResponse = {
       requestId,
       baseRevision: snapshot.revision,
       snapshot: newSnapshot,
@@ -150,7 +147,7 @@ export async function generateEvent(req: Request, res: Response) {
 }
 
 // ============ 2. POST /api/events/choose ============
-export async function chooseOption(req: Request, res: Response) {
+export function chooseOption(req: Request, res: Response) {
   const { requestId, snapshot, eventId, optionId } = req.body as ChooseOptionRequest;
 
   if (!requestId || !snapshot || !eventId || !optionId) {
@@ -166,7 +163,7 @@ export async function chooseOption(req: Request, res: Response) {
     return sendError(res, requestId, 'GAME_COMPLETED', 'Game already ended', false);
   }
 
-  if (!snapshot.currentEvent || snapshot.phase !== 'awaitingChoice') {
+  if (!snapshot.currentEvent || snapshot.phase !== 'pendingChoice') {
     return sendError(res, requestId, 'NO_PENDING_EVENT', 'No pending event', false);
   }
 
@@ -179,7 +176,6 @@ export async function chooseOption(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_OPTION', 'Option not found', false);
   }
 
-  const beforeAttributes = { ...snapshot.attributes };
   const afterAttributes = applyEffects(snapshot.attributes, chosenOption.effects);
 
   const newHistory = [
@@ -187,18 +183,16 @@ export async function chooseOption(req: Request, res: Response) {
     {
       day: snapshot.history.length + 1,
       eventId: snapshot.currentEvent.id,
+      optionId: chosenOption.id,
       eventTitle: snapshot.currentEvent.title,
-      chosenOptionId: chosenOption.id,
-      chosenOptionText: chosenOption.text,
-      effects: chosenOption.effects,
+      chosenText: chosenOption.text,
       resultText: chosenOption.resultText,
-      accumulated: { ...afterAttributes },
-      timestamp: new Date().toISOString(),
+      effects: chosenOption.effects,
     },
   ];
 
   const isEnding = newHistory.length === TOTAL_DAYS;
-  const newPhase = isEnding ? 'awaitingEnding' : 'showingResult';
+  const newPhase = isEnding ? 'pendingEnding' : 'showResult';
 
   let newSnapshot = incrementRevision(snapshot);
   newSnapshot = {
@@ -209,7 +203,7 @@ export async function chooseOption(req: Request, res: Response) {
     currentEvent: null,
   };
 
-  const response: ChooseOptionResponse = {
+  const response: SuccessResponse = {
     requestId,
     baseRevision: snapshot.revision,
     snapshot: newSnapshot,
@@ -235,7 +229,7 @@ export async function generateEnding(req: Request, res: Response) {
   }
 
   if (snapshot.ending && snapshot.phase === 'ended') {
-    const response: GenerateEndingResponse = {
+    const response: SuccessResponse = {
       requestId,
       baseRevision: snapshot.revision,
       snapshot: { ...snapshot },
@@ -243,7 +237,7 @@ export async function generateEnding(req: Request, res: Response) {
     return sendSuccess(res, response);
   }
 
-  if (snapshot.phase !== 'awaitingEnding') {
+  if (snapshot.phase !== 'pendingEnding') {
     return sendError(res, requestId, 'INVALID_PHASE', 'Current phase does not allow ending generation', false);
   }
 
@@ -265,7 +259,7 @@ export async function generateEnding(req: Request, res: Response) {
       },
     };
 
-    const response: GenerateEndingResponse = {
+    const response: SuccessResponse = {
       requestId,
       baseRevision: snapshot.revision,
       snapshot: newSnapshot,

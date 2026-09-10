@@ -1,15 +1,18 @@
 ﻿// ============================================
-// Core Game Logic
+// 核心游戏逻辑
 // ============================================
 
 import { v4 as uuidv4 } from 'uuid';
 import {
-  GameSnapshot,
+  Snapshot,
   Attributes,
-  HistoryRecord,
-  EventData,
-  EventOption,
-  EndingResult,
+  Effects,
+  HistoryEntry,
+  GameEvent,
+  GameOption,
+  Ending,
+  Grade,
+  Phase,
 } from './types';
 import {
   INITIAL_ATTRIBUTES,
@@ -21,15 +24,14 @@ import {
   EFFECT_RANGES,
 } from './constants';
 
-// ---------- Create initial game snapshot ----------
-export function createInitialSnapshot(): GameSnapshot {
-  const now = new Date().toISOString();
+// ---------- 创建新游戏快照 ----------
+export function createInitialSnapshot(): Snapshot {
   return {
     schemaVersion: SCHEMA_VERSION,
     rulesVersion: RULES_VERSION,
     gameId: uuidv4(),
     revision: 0,
-    phase: 'idle',
+    phase: 'pendingEvent',
     attributes: { ...INITIAL_ATTRIBUTES },
     history: [],
     currentEvent: null,
@@ -37,8 +39,8 @@ export function createInitialSnapshot(): GameSnapshot {
   };
 }
 
-// ---------- Apply effects to attributes ----------
-export function applyEffects(current: Attributes, effects: Attributes): Attributes {
+// ---------- 应用属性变化 ----------
+export function applyEffects(current: Attributes, effects: Effects): Attributes {
   return {
     academics: current.academics + effects.academics,
     social: current.social + effects.social,
@@ -47,18 +49,18 @@ export function applyEffects(current: Attributes, effects: Attributes): Attribut
   };
 }
 
-// ---------- Check if game is completed ----------
-export function isGameCompleted(snapshot: GameSnapshot): boolean {
+// ---------- 判断游戏是否完成 ----------
+export function isGameCompleted(snapshot: Snapshot): boolean {
   return snapshot.history.length === TOTAL_DAYS;
 }
 
-// ---------- Get current day ----------
-export function getCurrentDay(snapshot: GameSnapshot): number {
+// ---------- 获取当前天数 ----------
+export function getCurrentDay(snapshot: Snapshot): number {
   return snapshot.history.length + 1;
 }
 
-// ---------- Get grades for all attributes ----------
-export function getGrades(attributes: Attributes) {
+// ---------- 获取四维分档 ----------
+export function getGrades(attributes: Attributes): Record<keyof Attributes, Grade> {
   return {
     academics: getGrade(attributes.academics, GRADE_THRESHOLDS.academics),
     social: getGrade(attributes.social, GRADE_THRESHOLDS.social),
@@ -67,34 +69,34 @@ export function getGrades(attributes: Attributes) {
   };
 }
 
-// ---------- Validate snapshot ----------
-export function validateSnapshot(snapshot: GameSnapshot): { isValid: boolean; reason?: string } {
-  // 1. Version check
+// ---------- 校验快照 ----------
+export function validateSnapshot(snapshot: Snapshot): { isValid: boolean; reason?: string } {
+  // 1. 版本检查
   if (snapshot.schemaVersion !== SCHEMA_VERSION) {
     return { isValid: false, reason: 'unsupported schemaVersion: ' + snapshot.schemaVersion };
   }
 
-  // 2. Required fields
+  // 2. 必填字段
   if (!snapshot.gameId || typeof snapshot.gameId !== 'string') {
     return { isValid: false, reason: 'invalid gameId' };
   }
   if (typeof snapshot.revision !== 'number' || snapshot.revision < 0) {
     return { isValid: false, reason: 'invalid revision' };
   }
-  const validPhases = ['idle', 'generating', 'awaitingChoice', 'showingResult', 'awaitingEnding', 'ended'];
+  const validPhases: Phase[] = ['pendingEvent', 'pendingChoice', 'showResult', 'pendingEnding', 'ended'];
   if (!validPhases.includes(snapshot.phase)) {
     return { isValid: false, reason: 'invalid phase' };
   }
 
-  // 3. Attribute type check
+  // 3. 属性类型检查
   const a = snapshot.attributes;
   if (typeof a.academics !== 'number' || typeof a.social !== 'number' ||
       typeof a.energy !== 'number' || typeof a.money !== 'number') {
     return { isValid: false, reason: 'attributes must be numbers' };
   }
 
-  // 4. Recalculate attributes from history
-  let recomputed = { ...INITIAL_ATTRIBUTES };
+  // 4. 根据历史记录重算属性
+  let recomputed: Attributes = { ...INITIAL_ATTRIBUTES };
   for (const record of snapshot.history) {
     recomputed = applyEffects(recomputed, record.effects);
   }
@@ -106,7 +108,7 @@ export function validateSnapshot(snapshot: GameSnapshot): { isValid: boolean; re
     return { isValid: false, reason: 'attribute mismatch with history recalculation' };
   }
 
-  // 5. History day continuity
+  // 5. 历史记录天数连续性
   for (let i = 0; i < snapshot.history.length; i++) {
     if (snapshot.history[i].day !== i + 1) {
       return { isValid: false, reason: 'history day sequence broken at index ' + i };
@@ -116,16 +118,16 @@ export function validateSnapshot(snapshot: GameSnapshot): { isValid: boolean; re
   return { isValid: true };
 }
 
-// ---------- Increment revision ----------
-export function incrementRevision(snapshot: GameSnapshot): GameSnapshot {
+// ---------- 递增修订号 ----------
+export function incrementRevision(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
     revision: snapshot.revision + 1,
   };
 }
 
-// ---------- Validate event effects ----------
-export function validateEventEffects(effects: Attributes): { isValid: boolean; reason?: string } {
+// ---------- 校验事件选项效果是否在合法范围 ----------
+export function validateEventEffects(effects: Effects): { isValid: boolean; reason?: string } {
   const ranges = EFFECT_RANGES;
   if (effects.academics < ranges.academics.min || effects.academics > ranges.academics.max) {
     return { isValid: false, reason: 'academics effect out of range: ' + effects.academics };
