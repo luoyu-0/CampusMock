@@ -2,9 +2,9 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { TOTAL_DAYS } from './constants';
 import { applyEffects, getCurrentDay, getGrades, incrementRevision, isGameCompleted, validateEventEffects, validateSnapshot } from './service';
-import type { ChooseOptionRequest, ErrorResponse, EventData, GameSnapshot, GenerateEventRequest, SuccessResponse } from './types';
+import type { ChooseOptionRequest, Ending, ErrorResponse, GameEvent, GenerateEndingRequest, GenerateEventRequest, Snapshot, SuccessResponse } from './types';
 
-async function mockGenerateEvent(day: number): Promise<EventData> {
+async function mockGenerateEvent(day: number): Promise<GameEvent> {
   const eventId = randomUUID();
   return {
     id: eventId,
@@ -34,7 +34,7 @@ async function mockGenerateEvent(day: number): Promise<EventData> {
   };
 }
 
-async function mockGenerateEnding() {
+async function mockGenerateEnding(): Promise<Omit<Ending, 'finalAttributes' | 'grades'>> {
   return {
     title: '你开始找到了自己的大学节奏',
     description: '这两周并不总是顺利，但每一次选择都让你更了解自己。',
@@ -48,7 +48,7 @@ function sendError(res: Response, requestId: string, code: string, message: stri
   res.status(400).json(response);
 }
 
-function sendSuccess(res: Response, requestId: string, base: GameSnapshot, snapshot: GameSnapshot) {
+function sendSuccess(res: Response, requestId: string, base: Snapshot, snapshot: Snapshot) {
   const response: SuccessResponse = { requestId, baseRevision: base.revision, snapshot };
   res.json(response);
 }
@@ -124,7 +124,7 @@ export async function chooseOption(req: Request, res: Response) {
 }
 
 export async function generateEnding(req: Request, res: Response) {
-  const { requestId, snapshot } = (req.body ?? {}) as Partial<GenerateEventRequest>;
+  const { requestId, snapshot } = (req.body ?? {}) as Partial<GenerateEndingRequest>;
   if (!requestId || !snapshot) return sendError(res, requestId ?? 'unknown', 'MISSING_PARAMS', '请求缺少必要参数。', false);
 
   const validation = validateSnapshot(snapshot);
