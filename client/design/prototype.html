@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>我的大学日记 · 界面原型</title>
+<style>
+/* ============================================================
+   改配色和字体只看这一块，下面的样式都引用这里的变量
+   ============================================================ */
+:root{
+  --ink:#2c3345;              /* 主文字 */
+  --ink-soft:#6b7488;         /* 次要文字 */
+  --ink-faint:#9aa3b5;        /* 提示文字 */
+  --paper:#ffffff;            /* 卡片底 */
+  --sky-top:#dbe9ff;          /* 背景渐变上 */
+  --sky-bottom:#ffeede;       /* 背景渐变下 */
+  --brand:#4a6cf7;            /* 校园蓝，主按钮 */
+  --brand-deep:#3550c9;
+  --brand-soft:#eef2ff;
+  --energy:#f0913a;           /* 精力 */
+  --energy-soft:#fff3e6;
+  --money:#2fa36b;            /* 金钱 */
+  --money-soft:#e9f7ef;
+  --line:#e6ebf5;
+  --danger:#d9534f;
+  --danger-soft:#fdeeee;
+  --grade-a:#2fa36b;
+  --grade-b:#4a6cf7;
+  --grade-c:#e0a33c;
+  --grade-d:#d97a7a;
+  --radius:20px;
+  --shadow:0 10px 30px rgba(44,51,69,.08);
+  --font-diary:"Songti SC","STSong","SimSun",Georgia,serif;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  color:var(--ink);
+  font-family:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:16px;line-height:1.75;
+  background:linear-gradient(170deg,var(--sky-top) 0%,#f3f0ff 45%,var(--sky-bottom) 100%);
+  background-attachment:fixed;
+}
+
+/* ---------- 走查条：设计评审用，不属于产品界面 ---------- */
+.proto{
+  position:sticky;top:0;z-index:50;
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:10px 12px;
+  background:rgba(255,255,255,.86);
+  backdrop-filter:blur(8px);
+  border-bottom:1px dashed var(--line);
+  font-size:12px;
+}
+.proto .label{color:var(--ink-faint);margin-right:2px}
+.proto button{
+  font:inherit;font-size:12px;color:var(--ink-soft);
+  background:#fff;border:1px solid var(--line);border-radius:999px;
+  padding:4px 10px;cursor:pointer;
+}
+.proto button:hover{border-color:var(--brand);color:var(--brand)}
+.proto button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.proto .notes-toggle{margin-left:auto;display:flex;align-items:center;gap:5px;color:var(--ink-faint)}
+
+/* ---------- 背景插画 ---------- */
+.scene{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.scene svg{position:absolute}
+.scene .far{left:0;right:0;bottom:0;width:100%;height:auto}
+.scene .float-a{top:14%;left:6%;width:120px;opacity:.9}
+.scene .float-b{top:9%;right:8%;width:150px;opacity:.85}
+@media (max-width:900px){.scene .float-a,.scene .float-b,.scene .side{display:none}}
+
+/* 两侧远景共 5 套主题，由 .scene 上的 data-scene 决定显示哪一套（切屏时随机换，见脚本末尾）。
+   纸页和视差容器是共用的，只有建筑组按主题替换。 */
+.scene .th{display:none}
+.scene[data-scene="1"] .th-1,.scene[data-scene="2"] .th-2,.scene[data-scene="3"] .th-3,
+.scene[data-scene="4"] .th-4,.scene[data-scene="5"] .th-5{display:block;animation:cm-scene-in 1s ease both}
+@keyframes cm-scene-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .scene[data-scene="1"] .th-1,.scene[data-scene="2"] .th-2,.scene[data-scene="3"] .th-3,
+  .scene[data-scene="4"] .th-4,.scene[data-scene="5"] .th-5{animation:none}
+}
+
+/* 两侧远景。宽度锁在窄栏两侧的留白内：留白本身 = 50vw - 280px，再让出 100px 呼吸位。
+   这 100px 要同时容下两件事：纸页用 right:-6% / -14% 故意探出容器，以及鼠标视差最大 ±17px 的横向位移。
+   ≥1440px 时由 19vw 封顶，所以桌面观感不受这条 calc 影响。 */
+.scene .side{
+  position:absolute;width:min(19vw,calc(50vw - 380px));opacity:.45;
+  transform:translate3d(calc(var(--mx,0) * var(--depth,20) * 1px),calc(var(--my,0) * var(--depth,20) * .6px),0);
+  transition:transform .6s cubic-bezier(.22,.61,.36,1);
+}
+.scene .side-l{left:2.5%;bottom:15%;--depth:26}
+.scene .side-r{right:2.5%;bottom:18%;--depth:-34}
+/* 中段这两张纸页补建筑组上方留白；复用 .side 做视差容器、.page 做动画层，两层各占一个 transform */
+.scene .mid{opacity:.4}
+.scene .mid-l{left:8.5%;top:30%;bottom:auto;width:min(5.4vw,78px);--depth:46}
+.scene .mid-r{right:7.5%;top:22%;bottom:auto;width:min(4.6vw,66px);--depth:-56}
+.scene .mid .page{position:static;display:block;width:100%}
+.scene .mid-l .page{--rot:13deg;animation-duration:18s}
+.scene .mid-r .page{--rot:-8deg;animation-duration:22s;animation-delay:-11s}
+.scene .side svg,.scene .side .side-art{position:static;display:block;width:100%;height:auto;
+  animation:cm-drift 23s ease-in-out infinite alternate}
+.scene .side-r svg,.scene .side-r .side-art{animation-duration:28s;animation-delay:-7s}
+/* 位图是透明水彩小景，盖不住下面的兜底 SVG，所以加载成功后直接把矢量图收起来 */
+.scene .side.has-art svg{display:none}
+@keyframes cm-drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-10px,0)}}
+
+/* 漂浮的日记纸页 */
+.scene .page{
+  position:absolute;width:31%;aspect-ratio:5/6.6;border-radius:2px;
+  background:repeating-linear-gradient(to bottom,transparent 0 8px,rgba(120,110,92,.3) 8px 9px),#fffdf7;
+  box-shadow:0 8px 18px rgba(44,51,69,.16);
+  animation:cm-page 17s ease-in-out infinite alternate;
+}
+@keyframes cm-page{
+  from{transform:rotate(var(--rot,-7deg)) translate3d(0,0,0)}
+  to{transform:rotate(var(--rot,-7deg)) translate3d(0,-14px,0)}
+}
+.scene .side-l .page{top:-8%;right:-6%;--rot:11deg;animation-duration:19s}
+.scene .side-r .page{top:-14%;left:-8%;--rot:-9deg;animation-duration:15s;animation-delay:-4s}
+.scene .side-r .page.b{top:34%;right:-14%;left:auto;width:24%;--rot:6deg;animation-duration:21s;animation-delay:-9s}
+@media (prefers-reduced-motion:reduce){
+  .scene .side{transform:none;transition:none}
+  .scene .side svg,.scene .side .side-art,.scene .page{animation:none}
+}
+
+/* ---------- 主舞台 ---------- */
+.stage{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:18px 16px 64px}
+.screen{display:none}
+.screen.on{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- 游戏内顶栏（天数 + 资源） ---------- */
+.chrome{margin-bottom:14px}
+.day-line{display:flex;align-items:baseline;gap:10px}
+.day-line .d{font-size:22px;font-weight:700;letter-spacing:.5px}
+.day-line .w{font-size:13px;color:var(--ink-soft)}
+.hud{display:flex;gap:8px;margin-top:10px}
+.pill{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px 5px 9px;border-radius:999px;
+  font-size:13px;font-weight:600;
+  background:var(--paper);box-shadow:var(--shadow);
+}
+.pill .ico{width:16px;height:16px;flex:none}
+.pill.energy{color:var(--energy)}
+.pill.money{color:var(--money)}
+.dots{display:flex;gap:5px;margin-top:12px}
+.dots i{width:100%;height:4px;border-radius:999px;background:#fff;opacity:.55}
+.dots i.done{opacity:1;background:var(--brand)}
+.dots i.now{opacity:1;background:var(--energy)}
+
+/* ---------- 卡片 ---------- */
+.card{
+  background:var(--paper);border-radius:var(--radius);
+  padding:22px 20px;box-shadow:var(--shadow);margin-bottom:14px;
+}
+.card .kicker{font-size:12px;letter-spacing:2px;color:var(--ink-faint);margin-bottom:8px}
+.etitle{font-family:var(--font-diary);font-size:24px;line-height:1.4;margin:0 0 12px}
+.body{font-size:15.5px;color:#3a4256;margin:0}
+.body p{margin:0 0 1em}
+.body p:last-child{margin-bottom:0}
+
+/* ---------- 选项 ---------- */
+.ask{font-size:14px;color:var(--ink-soft);margin:18px 0 10px}
+.opt{
+  display:block;width:100%;text-align:left;font:inherit;font-size:15px;
+  background:#fbfcff;border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:10px;cursor:pointer;color:var(--ink);
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.opt:hover{border-color:var(--brand);background:var(--brand-soft);transform:translateY(-1px)}
+.opt small{display:block;font-size:12px;color:var(--ink-faint);margin-top:3px}
+
+/* ---------- 按钮 ---------- */
+.btn{
+  display:block;width:100%;font:inherit;font-size:16px;font-weight:600;
+  padding:14px 18px;border-radius:14px;border:0;cursor:pointer;
+  background:linear-gradient(135deg,var(--brand),var(--brand-deep));color:#fff;
+  box-shadow:0 8px 20px rgba(74,108,247,.28);
+}
+.btn:hover{filter:brightness(1.05)}
+.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand);box-shadow:none;font-weight:500}
+.btn.muted{background:#fff;color:var(--ink-soft);border:1px solid var(--line);box-shadow:none;font-weight:500}
+.btn-row{display:flex;flex-direction:column;gap:10px}
+.hint{font-size:12.5px;color:var(--ink-faint);text-align:center;margin:12px 0 0}
+
+/* ---------- 结算变化 ---------- */
+.chosen{font-size:13.5px;color:var(--ink-soft);margin:0 0 12px}
+.chosen b{color:var(--ink);font-weight:600}
+.delta{display:flex;gap:10px;margin-top:16px}
+.delta .d{
+  flex:1;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-radius:14px;
+}
+.delta .down{background:var(--energy-soft)}
+.delta .up{background:var(--money-soft)}
+.delta .name{font-size:13px;color:var(--ink-soft)}
+.delta .v{font-size:19px;font-weight:700}
+.delta .v.neg{color:var(--danger)}
+.delta .v.pos{color:var(--money)}
+
+/* ---------- 前情抽屉 ---------- */
+.hist{
+  background:rgba(255,255,255,.7);border:1px solid var(--line);
+  border-radius:var(--radius);padding:0;margin-bottom:14px;overflow:hidden;
+}
+.hist > summary{
+  list-style:none;cursor:pointer;padding:14px 18px;
+  font-size:14px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;
+}
+.hist > summary::-webkit-details-marker{display:none}
+.hist > summary::after{content:"展开";font-size:12px;color:var(--brand)}
+.hist[open] > summary::after{content:"收起"}
+.hist ul{list-style:none;margin:0;padding:4px 18px 18px}
+.hist li{padding:10px 0;border-top:1px dashed var(--line);font-size:13.5px;color:var(--ink-soft)}
+.hist li b{display:block;color:var(--ink);font-weight:600;font-size:14px;margin-bottom:2px}
+
+/* ---------- 结局 ---------- */
+.ending-hero{border-radius:var(--radius);overflow:hidden}
+.ending-hero.art-frame{max-width:none;height:180px;aspect-ratio:auto;margin:0 0 22px;box-shadow:none;background:#e9eefc}
+.ending-hero.art-frame .glow{background:radial-gradient(46% 66% at 50% 60%,rgba(255,226,170,.55),rgba(255,226,170,0) 72%)}
+.grades{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 4px}
+.grade{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-radius:14px;background:#fbfcff;border:1px solid var(--line);
+}
+.grade .n{font-size:13.5px;color:var(--ink-soft)}
+.grade .g{font-size:18px;font-weight:800;letter-spacing:1px}
+.g.a{color:var(--grade-a)} .g.b{color:var(--grade-b)} .g.c{color:var(--grade-c)} .g.d{color:var(--grade-d)}
+.sec{margin-top:20px}
+.sec .h{font-size:13px;letter-spacing:2px;color:var(--brand);margin-bottom:6px}
+
+/* ---------- 等待态 ---------- */
+.skeleton .l{height:13px;border-radius:6px;background:linear-gradient(90deg,#eef1f8,#e2e8f5,#eef1f8);
+  background-size:200% 100%;animation:sh 1.4s infinite;margin-bottom:11px}
+@keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
+.wait{text-align:center;padding:26px 0 10px}
+.wait .spin{
+  width:52px;height:52px;margin:0 auto 16px;border-radius:50%;
+  border:3px solid var(--brand-soft);border-top-color:var(--brand);
+  animation:sp 1s linear infinite;
+}
+@keyframes sp{to{transform:rotate(360deg)}}
+.wait .t{font-size:15px;color:var(--ink-soft)}
+.wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
+
+/* ---------- 错误态 ---------- */
+.card.err{background:var(--danger-soft);border:1px solid #f6d9d9}
+.card.err .t{font-size:17px;font-weight:700;margin:0 0 8px;color:#9c3f3c}
+.card.err .m{font-size:14.5px;color:#7d5250;margin:0}
+.err-ico{width:44px;height:44px;margin-bottom:12px}
+
+/* ---------- 开始页 ---------- */
+.hero{padding:26px 2px 6px;text-align:center}
+.art-frame{
+  position:relative;width:100%;max-width:330px;aspect-ratio:330/200;
+  margin:0 auto 6px;border-radius:24px;overflow:hidden;background:#e9eefc;
+  box-shadow:0 14px 34px rgba(44,51,69,.16);
+}
+.art-frame .art{position:absolute;inset:0;width:100%;height:100%;display:block}
+.art-frame .photo{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  animation:cm-kenburns 42s ease-in-out infinite alternate;
+}
+@keyframes cm-kenburns{
+  from{transform:scale(1.02) translate3d(-.8%,-.6%,0)}
+  to{transform:scale(1.09) translate3d(.8%,.6%,0)}
+}
+.art-frame .glow{
+  position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(58% 46% at 50% 30%,rgba(255,226,170,.6),rgba(255,226,170,0) 70%);
+  animation:cm-breathe 9s ease-in-out infinite;
+}
+@keyframes cm-breathe{0%,100%{opacity:.4}50%{opacity:.9}}
+.art-frame .leaves{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.art-frame .leaves i{
+  position:absolute;top:-14px;left:var(--x,20%);width:9px;height:9px;
+  background:var(--leaf,#e0a33c);border-radius:0 60% 0 60%;opacity:0;
+  animation:cm-fall var(--t,9s) linear var(--d,0s) infinite;
+}
+@keyframes cm-fall{
+  0%{opacity:0;transform:translate3d(0,0,0) rotate(0deg)}
+  8%{opacity:.9}
+  50%{transform:translate3d(18px,102px,0) rotate(180deg)}
+  92%{opacity:.8}
+  100%{opacity:0;transform:translate3d(-6px,212px,0) rotate(360deg)}
+}
+@media (prefers-reduced-motion:reduce){
+  .art-frame .photo,.art-frame .glow,.art-frame .leaves i{animation:none}
+  .art-frame .leaves i{display:none}
+}
+.hero h1{font-family:var(--font-diary);font-size:32px;margin:14px 0 6px;letter-spacing:2px}
+.hero .sub{font-size:14.5px;color:var(--ink-soft);margin:0 0 4px}
+.hero .desc{font-size:13.5px;color:var(--ink-faint);margin:16px auto 24px;max-width:330px;line-height:1.85}
+
+/* 桌面端：只把两处插画放大。窄栏保持 560px，否则 350 字的事件卡会拉成一行四十多字的长句。
+   插画用 margin-left:50% + translateX(-50%) 对称溢出窄栏，宽度上限锁在 92vw 内，不会撑出横向滚动条。 */
+@media (min-width:768px){
+  .hero .art-frame{width:min(660px,92vw);max-width:none;margin-left:50%;transform:translateX(-50%)}
+  .hero h1{font-size:40px;margin-top:22px}
+  .hero .desc{max-width:520px;font-size:14.5px}
+  .ending-hero.art-frame{height:240px}
+}
+
+/* ---------- 设计标注 ---------- */
+.note{
+  display:none;margin:10px 0 0;padding:9px 12px;
+  font-size:12.5px;line-height:1.6;color:#8a6a12;
+  background:#fff8e6;border:1px dashed #e8c96a;border-radius:10px;
+}
+body.show-notes .note{display:block}
+</style>
+</head>
+<body class="show-notes">
+
+<div class="proto">
+  <span class="label">走查</span>
+  <button data-go="start" class="on">开始页</button>
+  <button data-go="generating">① 待生成事件</button>
+  <button data-go="choice">② 待选择</button>
+  <button data-go="result">③ 展示结果</button>
+  <button data-go="endingPending">④ 待生成结局</button>
+  <button data-go="ending">⑤ 已结束</button>
+  <button data-go="errRetry">错误·可重试</button>
+  <button data-go="errFatal">错误·不可重试</button>
+  <label class="notes-toggle"><input type="checkbox" id="notes" checked>设计标注</label>
+</div>
+
+<div class="scene" aria-hidden="true">
+  <svg class="far" viewBox="0 0 1440 220" preserveAspectRatio="none">
+    <path d="M0 160 Q 240 90 480 150 T 960 140 T 1440 165 L1440 220 L0 220Z" fill="#cfe3c4" opacity=".75"/>
+    <path d="M0 190 Q 300 130 620 185 T 1440 190 L1440 220 L0 220Z" fill="#b9d6ad" opacity=".8"/>
+  </svg>
+  <svg class="float-a" viewBox="0 0 200 120"><g fill="#fff" opacity=".9"><circle cx="60" cy="70" r="30"/><circle cx="95" cy="55" r="38"/><circle cx="135" cy="72" r="27"/></g></svg>
+  <svg class="float-b" viewBox="0 0 200 120"><g fill="#fff" opacity=".8"><circle cx="55" cy="72" r="26"/><circle cx="92" cy="58" r="34"/><circle cx="130" cy="74" r="24"/></g></svg>
+
+  <div class="th th-1">
+    <div class="side side-l">
+    <img class="side-art" data-src="assets/side-1-l.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="0" y="70" width="34" height="80"/><rect x="162" y="62" width="38" height="88"/></g>
+        <g fill="#eef2fd"><rect x="12" y="52" width="52" height="98"/><rect x="70" y="72" width="38" height="78"/><rect x="116" y="86" width="44" height="64"/></g>
+        <g fill="#4a63c9"><path d="M8 52h60l-6-12H14z"/><path d="M66 72h46l-6-11H72z"/><path d="M112 86h52l-6-11H118z"/></g>
+        <g fill="#cdd9f5">
+          <rect x="20" y="66" width="8" height="11"/><rect x="34" y="66" width="8" height="11"/><rect x="48" y="66" width="8" height="11"/>
+          <rect x="20" y="88" width="8" height="11"/><rect x="34" y="88" width="8" height="11"/><rect x="48" y="88" width="8" height="11"/>
+          <rect x="20" y="110" width="8" height="11"/><rect x="34" y="110" width="8" height="11"/><rect x="48" y="110" width="8" height="11"/>
+          <rect x="79" y="86" width="8" height="10"/><rect x="92" y="86" width="8" height="10"/>
+          <rect x="79" y="107" width="8" height="10"/><rect x="92" y="107" width="8" height="10"/>
+          <rect x="124" y="99" width="8" height="10"/><rect x="138" y="99" width="8" height="10"/>
+        </g>
+        <rect x="34" y="130" width="13" height="20" fill="#d9a97e"/>
+        <g><rect x="168" y="106" width="6" height="44" fill="#8a7a63"/><circle cx="171" cy="98" r="21" fill="#7fbb86"/><circle cx="182" cy="108" r="12" fill="#a9d3a3"/></g>
+      </svg>
+      <span class="page"></span>
+    </div>
+    <div class="side side-r">
+    <img class="side-art" data-src="assets/side-1-r.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="152" y="76" width="44" height="74"/><rect x="6" y="92" width="26" height="58"/></g>
+        <path d="M46 56 L98 26 L150 56 Z" fill="#4a63c9"/>
+        <rect x="48" y="56" width="100" height="9" fill="#4a63c9"/>
+        <g fill="#fff"><rect x="54" y="65" width="11" height="63"/><rect x="76" y="65" width="11" height="63"/><rect x="109" y="65" width="11" height="63"/><rect x="131" y="65" width="11" height="63"/></g>
+        <rect x="48" y="128" width="100" height="22" fill="#eef2fd"/>
+        <rect x="93" y="80" width="11" height="48" fill="#d9a97e"/>
+        <g><rect x="20" y="102" width="6" height="48" fill="#8a7a63"/><circle cx="23" cy="94" r="23" fill="#7fbb86"/><circle cx="35" cy="106" r="12" fill="#a9d3a3"/></g>
+        <g><rect x="170" y="112" width="5" height="38" fill="#8a7a63"/><circle cx="172" cy="106" r="16" fill="#e0a33c"/></g>
+      </svg>
+      <span class="page"></span>
+      <span class="page b"></span>
+    </div>
+  </div>
+
+  <div class="th th-2">
+    <div class="side side-l">
+    <img class="side-art" data-src="assets/side-2-l.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45"><g fill="#8a7a63"><rect x="14" y="96" width="4" height="54"/><rect x="52" y="88" width="4" height="62"/></g><g fill="#a9d3a3"><circle cx="16" cy="88" r="17"/><circle cx="54" cy="80" r="19"/></g></g>
+        <g fill="#8a7a63"><rect x="92" y="78" width="7" height="72"/><rect x="136" y="86" width="6" height="64"/><rect x="176" y="96" width="5" height="54"/></g>
+        <g fill="#7fbb86"><circle cx="95" cy="66" r="27"/><circle cx="139" cy="76" r="22"/><circle cx="178" cy="88" r="17"/></g>
+        <g fill="#a9d3a3" opacity=".85"><circle cx="84" cy="78" r="14"/><circle cx="150" cy="86" r="11"/></g>
+        <g fill="#d9a97e"><rect x="26" y="122" width="44" height="5"/><rect x="26" y="131" width="44" height="4"/><rect x="30" y="127" width="4" height="23"/><rect x="63" y="127" width="4" height="23"/></g>
+      </svg>
+      <span class="page"></span>
+    </div>
+    <div class="side side-r">
+    <img class="side-art" data-src="assets/side-2-r.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45"><rect x="8" y="100" width="4" height="50" fill="#8a7a63"/><circle cx="10" cy="92" r="16" fill="#e0a33c"/></g>
+        <g fill="#8a7a63"><rect x="44" y="84" width="6" height="66"/><rect x="150" y="92" width="6" height="58"/></g>
+        <g fill="#e0a33c"><circle cx="47" cy="72" r="25"/><circle cx="153" cy="82" r="21"/></g>
+        <circle cx="61" cy="86" r="13" fill="#e6bd6a" opacity=".9"/>
+        <g stroke="#4a63c9" stroke-width="3" fill="none" stroke-linecap="round"><circle cx="98" cy="126" r="15"/><circle cx="132" cy="126" r="15"/><path d="M98 126 L112 102 L126 126 M112 102 L102 102"/></g>
+        <rect x="98" y="97" width="15" height="4" rx="2" fill="#4a63c9"/>
+      </svg>
+      <span class="page"></span>
+      <span class="page b"></span>
+    </div>
+  </div>
+
+  <div class="th th-3">
+    <div class="side side-l">
+    <img class="side-art" data-src="assets/side-3-l.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="0" y="84" width="30" height="66"/><rect x="172" y="80" width="28" height="70"/></g>
+        <path d="M52 62 q42 -40 84 0 V150 H52 Z" fill="#eef2fd"/>
+        <path d="M46 62 q48 -48 96 0 l-8 8 q-40 -40 -80 0 Z" fill="#4a63c9"/>
+        <path d="M80 150 v-40 q14 -17 28 0 v40 Z" fill="#cdd9f5"/>
+        <g fill="#d9a97e"><rect x="58" y="80" width="10" height="17" rx="5"/><rect x="120" y="80" width="10" height="17" rx="5"/></g>
+        <g fill="#fff"><rect x="46" y="138" width="96" height="4"/><rect x="38" y="144" width="112" height="6"/></g>
+        <g><rect x="164" y="112" width="5" height="38" fill="#8a7a63"/><circle cx="166" cy="106" r="16" fill="#7fbb86"/></g>
+      </svg>
+      <span class="page"></span>
+    </div>
+    <div class="side side-r">
+    <img class="side-art" data-src="assets/side-3-r.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="0" y="92" width="34" height="58"/></g>
+        <g><rect x="58" y="130" width="80" height="16" rx="3" fill="#4a63c9"/><rect x="66" y="115" width="68" height="15" rx="3" fill="#d9a97e"/><rect x="54" y="100" width="80" height="15" rx="3" fill="#7fbb86"/></g>
+        <g fill="#fff" opacity=".7"><rect x="68" y="135" width="28" height="3"/><rect x="74" y="119" width="24" height="3"/><rect x="62" y="105" width="30" height="3"/></g>
+        <g><rect x="150" y="100" width="6" height="50" fill="#8a7a63"/><circle cx="153" cy="92" r="22" fill="#a9d3a3"/></g>
+        <g><rect x="26" y="110" width="5" height="40" fill="#8a7a63"/><circle cx="28" cy="104" r="17" fill="#e0a33c"/></g>
+      </svg>
+      <span class="page"></span>
+      <span class="page b"></span>
+    </div>
+  </div>
+
+  <div class="th th-4">
+    <div class="side side-l">
+    <img class="side-art" data-src="assets/side-4-l.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="154" y="70" width="42" height="80"/></g>
+        <path d="M100 22 V84" stroke="#8a7a63" stroke-width="3"/>
+        <path d="M102 24 l26 8 -26 8 Z" fill="#d9534f"/>
+        <path d="M22 108 L34 84 h76 L122 108 Z" fill="#4a63c9" opacity=".8"/>
+        <g fill="#eef2fd"><rect x="14" y="108" width="112" height="42"/></g>
+        <g fill="#cdd9f5"><rect x="14" y="116" width="112" height="6"/><rect x="14" y="128" width="112" height="6"/><rect x="14" y="140" width="112" height="6"/></g>
+        <g fill="#8b93a8"><rect x="20" y="108" width="4" height="42"/><rect x="68" y="108" width="4" height="42"/><rect x="116" y="108" width="4" height="42"/></g>
+        <g><rect x="150" y="112" width="5" height="38" fill="#8a7a63"/><circle cx="152" cy="106" r="16" fill="#7fbb86"/></g>
+        <g><rect x="178" y="120" width="4" height="30" fill="#8a7a63"/><circle cx="180" cy="115" r="12" fill="#a9d3a3"/></g>
+      </svg>
+      <span class="page"></span>
+    </div>
+    <div class="side side-r">
+    <img class="side-art" data-src="assets/side-4-r.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45"><rect x="18" y="112" width="5" height="38" fill="#8a7a63"/><circle cx="20" cy="104" r="19" fill="#7fbb86"/><rect x="178" y="116" width="5" height="34" fill="#8a7a63"/><circle cx="180" cy="108" r="17" fill="#a9d3a3"/></g>
+        <g stroke="#dbe4f8" stroke-width="2"><path d="M74 88 V142 M86 88 V142 M98 88 V142 M110 88 V142 M122 88 V142 M134 88 V142 M64 100 H148 M64 114 H148 M64 128 H148"/></g>
+        <g stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"><path d="M62 144 V84 H150 V144"/><path d="M62 84 L48 96 V144 M150 84 L164 96 V144"/></g>
+      </svg>
+      <span class="page"></span>
+      <span class="page b"></span>
+    </div>
+  </div>
+
+  <div class="th th-5">
+    <div class="side side-l">
+    <img class="side-art" data-src="assets/side-5-l.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45" fill="#dbe4f8"><rect x="0" y="86" width="26" height="64"/></g>
+        <path d="M54 60 q42 -16 84 0" fill="none" stroke="#4a63c9" stroke-width="7" stroke-linecap="round"/>
+        <path d="M64 56 q32 -22 64 0 l-6 -12 q-26 -14 -52 0 Z" fill="#3a4f9f"/>
+        <g fill="#fff" stroke="#c3d2f0" stroke-width="1.6"><rect x="66" y="62" width="6" height="66"/><rect x="92" y="62" width="6" height="66"/><rect x="120" y="62" width="6" height="66"/></g>
+        <rect x="62" y="98" width="72" height="4" fill="#eef2fd" stroke="#c3d2f0" stroke-width="1.2"/>
+        <rect x="56" y="128" width="80" height="7" fill="#eef2fd"/>
+        <rect x="48" y="135" width="96" height="15" fill="#bcd6f0"/>
+        <g><rect x="162" y="96" width="6" height="54" fill="#8a7a63"/><circle cx="165" cy="84" r="21" fill="#7fbb86"/>
+          <g stroke="#7fbb86" stroke-width="3" fill="none" stroke-linecap="round"><path d="M148 90 q-4 19 0 32 M157 96 q-3 20 0 30 M173 96 q3 20 0 30 M182 90 q4 19 0 32"/></g></g>
+      </svg>
+      <span class="page"></span>
+    </div>
+    <div class="side side-r">
+    <img class="side-art" data-src="assets/side-5-r.webp" alt="" aria-hidden="true" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">
+      <svg viewBox="0 0 200 150">
+        <g opacity=".45"><rect x="166" y="104" width="5" height="46" fill="#8a7a63"/><circle cx="168" cy="98" r="18" fill="#7fbb86"/></g>
+        <path d="M24 142 Q96 54 168 142 L152 142 Q96 76 40 142 Z" fill="#eef2fd"/>
+        <path d="M24 142 Q96 54 168 142" fill="none" stroke="#4a63c9" stroke-width="3" opacity=".4"/>
+        <path d="M22 130 Q96 42 170 130" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+        <g stroke="#c3d2f0" stroke-width="3" stroke-linecap="round"><path d="M45 107 V120 M59 97 V110 M96 86 V98 M133 97 V109 M148 107 V120"/></g>
+        <g stroke="#7fbb86" stroke-width="3" fill="none" stroke-linecap="round"><path d="M8 150 q6 -22 0 -32 M18 150 q4 -18 10 -26 M28 150 q-4 -16 1 -24 M184 150 q-6 -24 0 -34 M174 150 q-4 -18 -10 -26"/></g>
+      </svg>
+      <span class="page"></span>
+      <span class="page b"></span>
+    </div>
+  </div>
+
+  <div class="side mid mid-l"><span class="page"></span></div>
+  <div class="side mid mid-r"><span class="page"></span></div>
+</div>
+
+<main class="stage">
+
+<!-- ============ 开始页 ============ -->
+<section id="s-start" class="screen on">
+  <div class="hero">
+    <div class="art-frame">
+    <svg class="art" viewBox="0 0 330 200" role="img" aria-label="校园校门插画">
+      <defs>
+        <linearGradient id="cm-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#e6eeff"/><stop offset=".55" stop-color="#f3eeff"/><stop offset="1" stop-color="#fbeeda"/>
+        </linearGradient>
+        <linearGradient id="cm-roof" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#748ad6"/><stop offset="1" stop-color="#4a5da8"/>
+        </linearGradient>
+        <linearGradient id="cm-stone" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fbf3e6"/><stop offset="1" stop-color="#e3d3b9"/>
+        </linearGradient>
+        <linearGradient id="cm-path" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#f2e4c9"/><stop offset="1" stop-color="#dbbf95"/>
+        </linearGradient>
+        <radialGradient id="cm-sun"><stop offset="0" stop-color="#fff4d4"/><stop offset="1" stop-color="#ffd18a"/></radialGradient>
+        <radialGradient id="cm-ray"><stop offset="0" stop-color="#ffe3b4" stop-opacity=".45"/><stop offset="1" stop-color="#ffe3b4" stop-opacity="0"/></radialGradient>
+        <linearGradient id="cm-haze" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff1da" stop-opacity="0"/><stop offset="1" stop-color="#ffe7c4" stop-opacity=".45"/>
+        </linearGradient>
+        <filter id="cm-soft" x="-50%" y="-90%" width="200%" height="320%"><feGaussianBlur stdDeviation="2.4"/></filter>
+        <clipPath id="cm-frame"><rect width="330" height="200" rx="24"/></clipPath>
+      </defs>
+
+      <g clip-path="url(#cm-frame)">
+      <rect width="330" height="200" fill="url(#cm-sky)"/>
+      <circle cx="276" cy="42" r="40" fill="#ffd79a" opacity=".16"/>
+      <circle cx="276" cy="42" r="27" fill="#ffd79a" opacity=".3"/>
+      <circle cx="276" cy="42" r="14" fill="url(#cm-sun)"/>
+      <g fill="#fff">
+        <g opacity=".92"><circle cx="50" cy="50" r="10"/><circle cx="64" cy="43" r="14"/><circle cx="80" cy="51" r="9"/></g>
+        <g opacity=".8"><circle cx="196" cy="32" r="7"/><circle cx="207" cy="26" r="10"/><circle cx="219" cy="33" r="6"/></g>
+        <g opacity=".55"><circle cx="120" cy="24" r="6"/><circle cx="130" cy="20" r="8"/><circle cx="141" cy="25" r="5"/></g>
+      </g>
+      <g fill="none" stroke="#aab3c8" stroke-width="1.5" stroke-linecap="round" opacity=".8">
+        <path d="M96 62 q4 -4 8 0 q4 -4 8 0"/><path d="M112 72 q3 -3 6 0 q3 -3 6 0"/>
+      </g>
+
+      <path d="M0 146 Q 70 124 150 140 T 330 134 L330 158 L0 158Z" fill="#c2d6f0" opacity=".7"/>
+      <path d="M0 153 Q 90 137 180 150 T 330 145 L330 165 L0 165Z" fill="#cfe0c6" opacity=".9"/>
+      <g opacity=".55" fill="#b6c6e8">
+        <rect x="12" y="88" width="32" height="62" rx="2"/><rect x="46" y="108" width="20" height="42" rx="2"/>
+        <rect x="250" y="96" width="28" height="54" rx="2"/><rect x="280" y="112" width="32" height="38" rx="2"/>
+      </g>
+      <g opacity=".7" fill="#eaf0fc">
+        <rect x="17" y="96" width="6" height="7" rx="1"/><rect x="28" y="96" width="6" height="7" rx="1"/>
+        <rect x="17" y="110" width="6" height="7" rx="1"/><rect x="28" y="110" width="6" height="7" rx="1"/>
+        <rect x="17" y="124" width="6" height="7" rx="1"/><rect x="28" y="124" width="6" height="7" rx="1"/>
+        <rect x="51" y="116" width="5" height="6" rx="1"/><rect x="51" y="128" width="5" height="6" rx="1"/>
+        <rect x="255" y="104" width="6" height="7" rx="1"/><rect x="265" y="104" width="6" height="7" rx="1"/>
+        <rect x="255" y="118" width="6" height="7" rx="1"/><rect x="265" y="118" width="6" height="7" rx="1"/>
+        <rect x="286" y="120" width="7" height="6" rx="1"/><rect x="298" y="120" width="7" height="6" rx="1"/>
+      </g>
+
+      <g opacity=".8"><path d="M152 112 L166 99 L180 112Z" fill="#a9b8de"/>
+        <rect x="156" y="112" width="20" height="38" fill="#c3cee9"/>
+        <rect x="160" y="120" width="12" height="11" rx="5.5" fill="#eef2fb"/>
+        <path d="M166 123 L166 126 L168.5 127.5" stroke="#8b9bc7" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <rect x="161" y="137" width="10" height="13" rx="1" fill="#dfe6f6"/></g>
+
+      <path d="M0 150 Q 80 142 165 148 T 330 145 L330 200 L0 200Z" fill="#cbe0bf"/>
+      <path d="M156 148 L174 148 L182 170 L148 170Z" fill="url(#cm-path)" opacity=".95"/>
+
+      <g filter="url(#cm-soft)" fill="#4f7a52" opacity=".26">
+        <ellipse cx="112" cy="167" rx="18" ry="4"/><ellipse cx="218" cy="167" rx="18" ry="4"/>
+        <ellipse cx="142" cy="164" rx="10" ry="3"/><ellipse cx="188" cy="164" rx="10" ry="3"/>
+        <ellipse cx="73" cy="163" rx="24" ry="5"/><ellipse cx="253" cy="163" rx="19" ry="4.5"/>
+      </g>
+
+      <g>
+        <rect x="106" y="96" width="13" height="70" rx="2.5" fill="url(#cm-stone)"/>
+        <rect x="211" y="96" width="13" height="70" rx="2.5" fill="url(#cm-stone)"/>
+        <rect x="138" y="100" width="8" height="64" rx="2" fill="url(#cm-stone)"/>
+        <rect x="184" y="100" width="8" height="64" rx="2" fill="url(#cm-stone)"/>
+        <g fill="#8d7a5c" opacity=".16">
+          <rect x="106" y="96" width="3.5" height="70" rx="1.75"/><rect x="211" y="96" width="3.5" height="70" rx="1.75"/>
+          <rect x="138" y="100" width="2.4" height="64"/><rect x="184" y="100" width="2.4" height="64"/>
+        </g>
+        <g fill="#fff" opacity=".5"><rect x="115" y="98" width="2.5" height="66" rx="1.25"/><rect x="220" y="98" width="2.5" height="66" rx="1.25"/></g>
+        <rect x="100" y="158" width="25" height="9" rx="2.5" fill="#d9c6a6"/>
+        <rect x="205" y="158" width="25" height="9" rx="2.5" fill="#d9c6a6"/>
+        <rect x="134" y="157" width="16" height="8" rx="2" fill="#e0cfb2"/>
+        <rect x="180" y="157" width="16" height="8" rx="2" fill="#e0cfb2"/>
+        <rect x="98" y="82" width="134" height="16" rx="3" fill="url(#cm-stone)"/>
+        <rect x="98" y="94" width="134" height="4" rx="2" fill="#c3ab84" opacity=".45"/>
+        <rect x="144" y="84.5" width="42" height="11" rx="2" fill="#e7eefc" stroke="#b9c4e8" stroke-width=".9"/>
+        <text x="165" y="93.5" text-anchor="middle" font-size="8" letter-spacing="1.5" fill="#42579f"
+              font-family="'PingFang SC','Microsoft YaHei',sans-serif">大学</text>
+        <rect x="155" y="58" width="20" height="13" rx="2" fill="url(#cm-stone)"/>
+        <path d="M124 64 Q165 46 204 64 Q165 56 124 64Z" fill="url(#cm-roof)"/>
+        <circle cx="124" cy="63.5" r="3" fill="#4a5da8"/><circle cx="204" cy="63.5" r="3" fill="#4a5da8"/>
+        <path d="M84 84 Q165 56 246 84 Q165 76 84 84Z" fill="url(#cm-roof)"/>
+        <g fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.2">
+          <path d="M96 82 Q165 60 234 82"/><path d="M106 83 Q165 65 224 83"/>
+        </g>
+        <path d="M84 84 Q165 76 246 84" fill="none" stroke="#3d4d90" stroke-opacity=".45" stroke-width="1.6"/>
+        <circle cx="84" cy="83" r="3.6" fill="#4a5da8"/><circle cx="246" cy="83" r="3.6" fill="#4a5da8"/>
+        <path d="M165 56 L165 30" stroke="#8b7f6d" stroke-width="2" stroke-linecap="round"/>
+        <path d="M166 31 L181 35.5 L166 40Z" fill="#f0913a"/>
+      </g>
+
+      <g><rect x="69" y="106" width="8" height="56" rx="4" fill="#a9763f"/>
+        <path d="M73 128 L62 118" stroke="#a9763f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="73" cy="98" r="24" fill="#6fae78"/><circle cx="55" cy="111" r="15" fill="#86c994"/>
+        <circle cx="90" cy="109" r="16" fill="#86c994"/><circle cx="73" cy="85" r="14" fill="#a3dfae"/>
+        <circle cx="64" cy="92" r="8" fill="#b7e7bf" opacity=".7"/></g>
+      <g><rect x="250" y="114" width="7" height="48" rx="3.5" fill="#a9763f"/>
+        <circle cx="253" cy="108" r="20" fill="#6fae78"/><circle cx="239" cy="118" r="12.5" fill="#86c994"/>
+        <circle cx="266" cy="116" r="13.5" fill="#86c994"/><circle cx="255" cy="97" r="11" fill="#a3dfae"/></g>
+
+      <path d="M0 170 Q 84 161 170 168 T 330 165 L330 200 L0 200Z" fill="#b3d3a6"/>
+      <path d="M148 170 L182 170 L214 200 L116 200Z" fill="url(#cm-path)"/>
+      <g stroke="#cdae7f" stroke-width="1.4" opacity=".75" fill="none">
+        <path d="M143 178 L187 178"/><path d="M135 188 L195 188"/><path d="M126 197 L204 197"/>
+      </g>
+      <g fill="none" stroke="#5f9e6b" stroke-width="1.8" stroke-linecap="round" opacity=".85">
+        <path d="M112 168 q-2 -6 -4 -8 M112 168 q1 -6 3 -8 M112 168 q4 -5 6 -6"/>
+        <path d="M218 168 q-2 -6 -4 -8 M218 168 q1 -6 3 -8 M218 168 q4 -5 6 -6"/>
+        <path d="M96 174 q-2 -5 -4 -7 M96 174 q2 -5 4 -7"/>
+        <path d="M234 173 q-2 -5 -4 -7 M234 173 q2 -5 4 -7"/>
+      </g>
+      <g><circle cx="104" cy="165" r="9" fill="#5f9e6b"/><circle cx="118" cy="168" r="6.5" fill="#79bd85"/>
+        <circle cx="206" cy="166" r="8" fill="#5f9e6b"/><circle cx="222" cy="169" r="6" fill="#79bd85"/>
+        <circle cx="139" cy="169" r="5" fill="#6fae78"/><circle cx="191" cy="168" r="5" fill="#6fae78"/>
+        <circle cx="130" cy="181" r="7" fill="#5f9e6b"/><circle cx="201" cy="179" r="8" fill="#5f9e6b"/>
+        <circle cx="210" cy="184" r="5.5" fill="#79bd85"/></g>
+      <g fill="#8fd79c" opacity=".9"><ellipse cx="236" cy="128" rx="4" ry="2" transform="rotate(-28 236 128)"/>
+        <ellipse cx="228" cy="142" rx="3.5" ry="1.8" transform="rotate(20 228 142)"/>
+        <ellipse cx="100" cy="126" rx="4" ry="2" transform="rotate(35 100 126)"/></g>
+
+      <g><ellipse cx="291" cy="167" rx="24" ry="4" fill="#4f7a52" opacity=".22" filter="url(#cm-soft)"/>
+        <rect x="270" y="146" width="44" height="5" rx="2.5" fill="#c58b52"/>
+        <rect x="270" y="136" width="44" height="4" rx="2" fill="#b3793f"/>
+        <rect x="274" y="151" width="4" height="13" rx="1.5" fill="#a9743f"/><rect x="306" y="151" width="4" height="13" rx="1.5" fill="#a9743f"/></g>
+      <g><ellipse cx="35" cy="169" rx="19" ry="4" fill="#4f7a52" opacity=".24" filter="url(#cm-soft)"/>
+        <rect x="18" y="141" width="34" height="28" rx="7" fill="#f0913a"/>
+        <path d="M26 141 q9 -12 18 0" stroke="#d97a2a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+        <rect x="18" y="150" width="34" height="4" fill="#d97a2a" opacity=".5"/>
+        <rect x="18" y="141" width="34" height="28" rx="7" fill="url(#cm-ray)" opacity=".5"/>
+        <circle cx="43" cy="161" r="4.5" fill="#fff" opacity=".7"/></g>
+
+      <g><ellipse cx="157" cy="180" rx="9" ry="2.6" fill="#4f7a52" opacity=".26" filter="url(#cm-soft)"/>
+        <rect x="152.5" y="170" width="3" height="9" rx="1.5" fill="#3f4a63"/>
+        <rect x="157.5" y="170" width="3" height="9" rx="1.5" fill="#3f4a63"/>
+        <rect x="149" y="158" width="15" height="13" rx="5" fill="#4a6cf7"/>
+        <rect x="151.5" y="160" width="10" height="10" rx="3.5" fill="#f0913a"/>
+        <circle cx="156.5" cy="153" r="5" fill="#3a4256"/></g>
+      <g><ellipse cx="174" cy="181" rx="8" ry="2.4" fill="#4f7a52" opacity=".26" filter="url(#cm-soft)"/>
+        <rect x="171" y="171" width="2.8" height="9" rx="1.4" fill="#3f4a63"/>
+        <rect x="175.6" y="171" width="2.8" height="9" rx="1.4" fill="#3f4a63"/>
+        <rect x="168" y="160" width="13" height="12" rx="4.5" fill="#2fa36b"/>
+        <rect x="170.5" y="162" width="8" height="9" rx="3" fill="#e0a33c"/>
+        <circle cx="174.5" cy="155.5" r="4.5" fill="#3a4256"/></g>
+
+      <rect y="132" width="330" height="68" fill="url(#cm-haze)"/>
+      <circle cx="292" cy="12" r="150" fill="url(#cm-ray)"/>
+      </g>
+      <rect width="330" height="200" rx="24" fill="none" stroke="#fff" stroke-width="2" opacity=".65"/>
+    </svg>
+    <img class="photo" src="assets/hero-campus.webp" alt="" aria-hidden="true" onerror="this.remove()">
+    <span class="glow"></span>
+    <span class="leaves" aria-hidden="true">
+      <i style="--x:14%;--t:8.5s;--d:.4s"></i>
+      <i style="--x:31%;--t:11s;--d:3.2s;--leaf:#c98b52"></i>
+      <i style="--x:57%;--t:9.5s;--d:1.6s"></i>
+      <i style="--x:74%;--t:12.5s;--d:5.4s;--leaf:#8fd79c"></i>
+      <i style="--x:89%;--t:10s;--d:7.2s"></i>
+    </span>
+    </div>
+    <h1>我的大学日记</h1>
+    <p class="sub">入学两周 · 十四篇日记</p>
+    <p class="desc">每一天都会有一件真实得有点耳熟的事发生。<br>你只需要决定，当时的自己会怎么做。</p>
+    <div class="btn-row">
+      <button class="btn">开始第一天</button>
+      <button class="btn ghost">继续上次的日记（第 5 天）</button>
+    </div>
+    <p class="hint">进度保存在这台设备的这个浏览器里</p>
+    <div class="note">两个按钮分别对应「无存档」和「有存档」两种开局，实际同一时刻只出现一个。存档本身由成员 D 实现，这里只是入口状态。</div>
+  </div>
+</section>
+
+<!-- ============ ① 待生成事件 ============ -->
+<section id="s-generating" class="screen">
+  <div class="chrome">
+    <div class="day-line"><span class="d">第 5 天</span><span class="w">9 月 5 日 · 星期三</span></div>
+    <div class="hud">
+      <span class="pill energy"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>精力 5</span>
+      <span class="pill money"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M8 7l4 5 4-5M6 12h12M7 21h10" stroke-linecap="round"/></svg>金钱 940</span>
+    </div>
+    <div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+  <div class="card">
+    <p class="kicker">今天的日记</p>
+    <div class="skeleton">
+      <div class="l" style="width:52%;height:20px"></div>
+      <div class="l" style="width:100%"></div>
+      <div class="l" style="width:96%"></div>
+      <div class="l" style="width:88%"></div>
+    </div>
+    <div class="wait">
+      <div class="spin"></div>
+      <p class="t">台灯已经打开了，日记还在路上……</p>
+      <p class="s">等待不会消耗这一天</p>
+    </div>
+  </div>
+  <div class="note">「等待和重试不推进天数」是硬验收项，所以界面上要显式安抚，避免玩家反复点。此处按钮全部禁用，防止重复提交。</div>
+</section>
+
+<!-- ============ ② 待选择 ============ -->
+<section id="s-choice" class="screen">
+  <div class="chrome">
+    <div class="day-line"><span class="d">第 5 天</span><span class="w">9 月 5 日 · 星期三</span></div>
+    <div class="hud">
+      <span class="pill energy"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>精力 5</span>
+      <span class="pill money"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M8 7l4 5 4-5M6 12h12M7 21h10" stroke-linecap="round"/></svg>金钱 940</span>
+    </div>
+    <div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <details class="hist">
+    <summary>前面几天</summary>
+    <ul>
+      <li><b>第 1 天 · 报到那天，我没敢问宿管阿姨要钥匙</b>排了很久队，最后是同寝的男生帮我刷的卡。</li>
+      <li><b>第 2 天 · 社团摊位前站了三圈</b>最后只领了一张宣传单，没敢填表。</li>
+      <li><b>第 3 天 · 把生活费转给了家里</b>说是不缺钱，其实是想买那本很贵的参考书。</li>
+      <li><b>第 4 天 · 通宵改了三门课的作业框架</b>走廊的灯灭了很多次。</li>
+    </ul>
+  </details>
+
+  <div class="card">
+    <p class="kicker">9 月 5 日 有风</p>
+    <h2 class="etitle">凌晨一点的台灯</h2>
+    <div class="body">
+      <p>室友们十一点半就睡了。上铺的呼吸声传下来，你才意识到已经这个点了。</p>
+      <p>桌上是明天早上要交的《大学生活导论》课程论文，你写到第二部分就卡住了——其实材料都查到了，只是不太确定老师说的「结合自身体验」到底要写多私人的东西。手机亮了一下，社团群里还在接龙报名，截止时间是今晚十二点，组长@了你好几次。</p>
+      <p>你在图书馆坐了一整天，太阳穴到现在还在跳。窗缝里钻进来的风把走廊的声控灯吹得忽明忽暗，灭了一次，又亮起来。</p>
+    </div>
+    <p class="ask">这时候你会——</p>
+    <button class="opt">先把论文写完，社团的表明天再补<small>反正老师说迟交扣分不多</small></button>
+    <button class="opt">关掉电脑先睡，写了一半也是半篇<small>明天课间再补一段</small></button>
+    <button class="opt">下楼买杯咖啡，逼自己两样都做完<small>便利店就到关门那一刻</small></button>
+    <div class="note">选择前不出现任何数值效果（已确认规则）。三个选项不能有明显「最优解」，这条要反馈给成员 C 写进提示词。前几天列表展示的是历史 resultText，成员 D 存档里对应 history 字段。</div>
+  </div>
+</section>
+
+<!-- ============ ③ 展示结果 ============ -->
+<section id="s-result" class="screen">
+  <div class="chrome">
+    <div class="day-line"><span class="d">第 5 天</span><span class="w">9 月 5 日 · 星期三</span></div>
+    <div class="hud">
+      <span class="pill energy"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>精力 3</span>
+      <span class="pill money"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M8 7l4 5 4-5M6 12h12M7 21h10" stroke-linecap="round"/></svg>金钱 940</span>
+    </div>
+    <div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+  <div class="card">
+    <p class="chosen">你选择了 · <b>先把论文写完，社团的表明天再补</b></p>
+    <h2 class="etitle" style="font-size:20px">把消息设成了免打扰</h2>
+    <div class="body">
+      <p>你给社团群开了免打扰，屏幕暗下去的那一刻房间安静得有点心虚。</p>
+      <p>第二段写了三遍才顺，走廊的灯灭了三次又亮起来。交出去的版本你自己不太满意，但它是写完了的。回程接水的路上，你在楼道里碰见同样没睡的隔壁床，你们一起站了一会儿，谁也没说话。</p>
+    </div>
+    <div class="delta">
+      <div class="d down"><span class="name">精力</span><span class="v neg">−2</span></div>
+      <div class="d up"><span class="name">金钱</span><span class="v">没变</span></div>
+    </div>
+    <div class="note">只直接展示精力与金钱的增减；这一项变化为 0 时写「没变」而不是 0，避免像表格。学业 +3、社交 −1 已写入 history，但界面上不出现数字，只由上面那段文字暗示（「写完了的」「谁也没说话」）。</div>
+  </div>
+  <button class="btn">继续写下一篇</button>
+  <p class="hint">第 6 天会在你点继续之后才开始</p>
+</section>
+
+<!-- ============ ④ 待生成结局 ============ -->
+<section id="s-endingPending" class="screen">
+  <div class="chrome">
+    <div class="day-line"><span class="d">两篇都写完了</span><span class="w">9 月 14 日 · 星期五</span></div>
+    <div class="hud">
+      <span class="pill energy"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>精力 −3</span>
+      <span class="pill money"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M8 7l4 5 4-5M6 12h12M7 21h10" stroke-linecap="round"/></svg>金钱 640</span>
+    </div>
+    <div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i></div>
+  </div>
+  <div class="card">
+    <div class="wait">
+      <div class="spin"></div>
+      <p class="t">十四天的日记摊在桌上，正在为你写结尾……</p>
+      <p class="s">属性已经锁定，这一步只重试结局，不会重做第 14 天</p>
+    </div>
+  </div>
+  <button class="btn muted">重试需要时才会出现在这里</button>
+  <div class="note">这一屏必须和「① 待生成事件」区分开：这里四维已经确定，玩家知道结果不会因重试而改变。成员 B 已确认第 14 天结算与结局生成分两次保存。</div>
+</section>
+
+<!-- ============ ⑤ 已结束 ============ -->
+<section id="s-ending" class="screen">
+  <div class="card" style="padding-bottom:22px">
+    <div class="ending-hero art-frame">
+      <svg class="art" viewBox="0 0 520 200" preserveAspectRatio="none" role="img" aria-label="落日林荫道插画">
+        <defs><linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fa7f0"/><stop offset=".55" stop-color="#f6c9a0"/><stop offset="1" stop-color="#fde6cf"/></linearGradient></defs>
+        <rect width="520" height="200" fill="url(#dusk)"/>
+        <circle cx="380" cy="132" r="26" fill="#fff2c4" opacity=".95"/>
+        <path d="M0 156 Q 130 120 260 152 T 520 148 L520 200 L0 200Z" fill="#b6cfa8"/>
+        <g stroke="#5d7a52" stroke-width="6" stroke-linecap="round">
+          <path d="M70 156 L70 106"/><path d="M150 158 L150 116"/><path d="M420 152 L420 104"/><path d="M480 154 L480 118"/>
+        </g>
+        <g fill="#6fae78" opacity=".95"><circle cx="70" cy="92" r="30"/><circle cx="150" cy="104" r="24"/><circle cx="420" cy="90" r="32"/><circle cx="480" cy="106" r="22"/></g>
+        <path d="M230 200 L246 150 L274 150 L292 200Z" fill="#e7d8c2"/>
+      </svg>
+      <img class="photo" src="assets/ending-dusk.webp" alt="" aria-hidden="true" onerror="this.remove()">
+      <span class="glow"></span>
+      <span class="leaves" aria-hidden="true">
+        <i style="--x:18%;--t:9.5s;--d:1.2s;--leaf:#d9a441"></i>
+        <i style="--x:44%;--t:12s;--d:4.6s;--leaf:#c98b52"></i>
+        <i style="--x:68%;--t:10.5s;--d:2.4s;--leaf:#d9a441"></i>
+        <i style="--x:85%;--t:13s;--d:7s;--leaf:#8fd79c"></i>
+      </span>
+    </div>
+    <p class="kicker">结局 · 9 月 14 日</p>
+    <h2 class="etitle">你把自己的节奏，找回来了一点点</h2>
+    <div class="body">
+      <p>这两周你几乎没有一件事是「轻松办完」的，但你都办到了某种程度：论文交上去了，哪怕不是最好的版本；室友叫你吃饭你去了两次，第三次你说想自己待着——那也是第一次你没勉强自己。</p>
+      <p>钱你留得住，人你累得狠。最后一个晚上你走在林荫道上，发现自己不再数还剩几天了。</p>
+    </div>
+
+    <div class="grades">
+      <div class="grade"><span class="n">学业</span><span class="g a">A</span></div>
+      <div class="grade"><span class="n">社交</span><span class="g d">D</span></div>
+      <div class="grade"><span class="n">精力</span><span class="g d">D</span></div>
+      <div class="grade"><span class="n">金钱</span><span class="g b">B</span></div>
+    </div>
+    <div class="note">待团队确认：结局页我按「四维都出档位，但只有精力/金钱附精确数字」设计。若「过程中隐藏学业社交」延伸到结局也不给数字，我就去掉下面的数值。</div>
+
+    <div class="sec">
+      <p class="h">评价</p>
+      <div class="body"><p>你把自己排在了任务后面。学业的 A 不是天赋，是你熬出来的；精力和社交同时落到 D，是同一件事的代价。这两周里没有哪一个选择是错的，只是有些选择会把后面的路变窄一点。</p></div>
+    </div>
+    <div class="sec">
+      <p class="h">给接下来几周的你</p>
+      <div class="body"><p>先睡够三天，再决定要不要退社团。如果想去上课，试着在课间跟旁边的人说一句和课无关的话——不用长，一句就够。低档位不等于你不行，它只是这两周留下的脚印。</p></div>
+    </div>
+  </div>
+  <button class="btn">重新开始两周</button>
+  <p class="hint">结束后会清掉旧存档，开始新的一局</p>
+</section>
+
+<!-- ============ 错误 · 可重试 ============ -->
+<section id="s-errRetry" class="screen">
+  <div class="chrome">
+    <div class="day-line"><span class="d">第 5 天</span><span class="w">9 月 5 日 · 星期三</span></div>
+    <div class="hud">
+      <span class="pill energy"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>精力 5</span>
+      <span class="pill money"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M8 7l4 5 4-5M6 12h12M7 21h10" stroke-linecap="round"/></svg>金钱 940</span>
+    </div>
+  </div>
+  <div class="card err">
+    <svg class="err-ico" viewBox="0 0 48 48" fill="none" stroke="#d9534f" stroke-width="3" stroke-linecap="round"><circle cx="24" cy="24" r="19"/><path d="M24 14v13M24 33v.5"/></svg>
+    <p class="t">今天的日记还没写完</p>
+    <p class="m">网络好像打了个盹，前面写好的内容都还在。</p>
+  </div>
+  <div class="btn-row">
+    <button class="btn">再试一次</button>
+    <button class="btn muted">先回到上一页</button>
+  </div>
+  <p class="hint">重试不会消耗这一天，也不会重复结算</p>
+  <div class="note">对应 error.retryable = true（模型超时、临时调用失败、字段缺失或越界）。文案统一「简体中文、不暴露 API 密钥与原始供应商报错」。</div>
+</section>
+
+<!-- ============ 错误 · 不可重试 ============ -->
+<section id="s-errFatal" class="screen">
+  <div class="card err">
+    <svg class="err-ico" viewBox="0 0 48 48" fill="none" stroke="#d9534f" stroke-width="3" stroke-linecap="round"><rect x="9" y="7" width="30" height="34" rx="4"/><path d="M16 18h16M16 26h16M16 34h9"/></svg>
+    <p class="t">这本日记我读不懂</p>
+    <p class="m">存档的版本和当前规则对不上。我没有改动它，也没有清空它——你之前的记录还在原处。</p>
+  </div>
+  <div class="btn-row">
+    <button class="btn muted">查看运行说明</button>
+  </div>
+  <p class="hint">这里刻意不给「重新开始」，避免误删存档</p>
+  <div class="note">对应「存档格式或规则版本不支持」。开发规划第 66 行要求：保留原数据、提示无法读取、不静默清空。所以这一屏没有任何会写存档的按钮，交回成员 D 处理。</div>
+</section>
+
+</main>
+
+<script>
+const screens = {
+  start:'s-start', generating:'s-generating', choice:'s-choice', result:'s-result',
+  endingPending:'s-endingPending', ending:'s-ending', errRetry:'s-errRetry', errFatal:'s-errFatal'
+};
+const bar = document.querySelector('.proto');
+bar.addEventListener('click', e => {
+  const b = e.target.closest('button[data-go]');
+  if (!b) return;
+  bar.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  Object.values(screens).forEach(id => document.getElementById(id).classList.remove('on'));
+  document.getElementById(screens[b.dataset.go]).classList.add('on');
+  pickScene();
+  window.scrollTo({top:0});
+});
+document.getElementById('notes').addEventListener('change', e => {
+  document.body.classList.toggle('show-notes', e.target.checked);
+});
+
+const scene = document.querySelector('.scene');
+addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  scene.style.setProperty('--mx', ((e.clientX / innerWidth) - .5).toFixed(3));
+  scene.style.setProperty('--my', ((e.clientY / innerHeight) - .5).toFixed(3));
+}, {passive:true});
+
+/* 两侧远景共 5 套主题，切屏时随机换一套。排除上一次的值，保证每次切换都看得见变化。
+   搬进 React 时等价做法：在 phase 变化时随机取 1~5，不要把上一次的值放进 state 长期记忆。 */
+let lastScene = 0;
+function pickScene() {
+  let n = lastScene;
+  while (n === lastScene) n = 1 + Math.floor(Math.random() * 5);
+  lastScene = n;
+  scene.dataset.scene = n;
+  /* 位图按需加载：十张共 545KB，一次屏幕只用其中两张。
+     不能用 loading="lazy"——祖先 display:none 的图片永远不会开始下载，改回可见也不会触发。
+     这里直接给当前主题的图补 src，取回前下面的兜底 SVG 照常显示，所以过渡是平滑的。 */
+  scene.querySelectorAll('.th-' + n + ' img[data-src]').forEach(img => {
+    img.src = img.dataset.src;
+    img.removeAttribute('data-src');
+  });
+}
+pickScene();
+</script>
+</body>
+</html>
