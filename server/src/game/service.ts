@@ -1,35 +1,107 @@
-﻿// ============================================
-// Core Game Logic
-// ============================================
-
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import {
-  GameSnapshot,
-  Attributes,
-  HistoryRecord,
-  EventData,
-  EventOption,
-  EndingResult,
-} from './types';
-import {
-  INITIAL_ATTRIBUTES,
-  TOTAL_DAYS,
-  SCHEMA_VERSION,
-  RULES_VERSION,
-  GRADE_THRESHOLDS,
-  getGrade,
   EFFECT_RANGES,
+  GRADE_THRESHOLDS,
+  INITIAL_ATTRIBUTES,
+  RULES_VERSION,
+  SCHEMA_VERSION,
+  TOTAL_DAYS,
+  getGrade,
 } from './constants';
+import type {
+  AttributeKey,
+  Attributes,
+  Effects,
+  EventData,
+  GameSnapshot,
+  Grade,
+  HistoryRecord,
+  Phase,
+} from './types';
 
-// ---------- Create initial game snapshot ----------
+const ATTRIBUTE_KEYS: AttributeKey[] = ['academics', 'social', 'energy', 'money'];
+const PHASES: Phase[] = ['pendingEvent', 'pendingChoice', 'showResult', 'pendingEnding', 'ended'];
+const GRADES: Grade[] = ['A', 'B', 'C', 'D'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isAttributes(value: unknown): value is Attributes {
+  return isRecord(value) && ATTRIBUTE_KEYS.every((key) => Number.isSafeInteger(value[key]));
+}
+
+function sameAttributes(left: Attributes, right: Attributes): boolean {
+  return ATTRIBUTE_KEYS.every((key) => left[key] === right[key]);
+}
+
+function isEffects(value: unknown): value is Effects {
+  if (!isAttributes(value)) return false;
+  return ATTRIBUTE_KEYS.every((key) => {
+    const range = EFFECT_RANGES[key];
+    return value[key] >= range.min && value[key] <= range.max;
+  });
+}
+
+function isEvent(value: unknown): value is EventData {
+  if (!isRecord(value) || !isText(value.id) || !Number.isInteger(value.day)) return false;
+  if (!isText(value.title) || !isText(value.description) || !Array.isArray(value.options) || value.options.length < 2) return false;
+  const ids = new Set<string>();
+  return value.options.every((option) => {
+    if (!isRecord(option) || !isText(option.id) || ids.has(option.id)) return false;
+    ids.add(option.id);
+    return isText(option.text) && isText(option.resultText) && isEffects(option.effects);
+  });
+}
+
+function isHistoryRecord(value: unknown, day: number): value is HistoryRecord {
+  return (
+    isRecord(value) &&
+    value.day === day &&
+    isText(value.eventId) &&
+    isText(value.optionId) &&
+    isText(value.eventTitle) &&
+    isText(value.chosenText) &&
+    isText(value.resultText) &&
+    isEffects(value.effects)
+  );
+}
+
+function eventMatchesRecord(event: EventData, record: HistoryRecord): boolean {
+  const selected = event.options.find((option) => option.id === record.optionId);
+  return (
+    event.id === record.eventId &&
+    event.day === record.day &&
+    selected !== undefined &&
+    selected.resultText === record.resultText &&
+    sameAttributes(selected.effects, record.effects)
+  );
+}
+
+function isEnding(value: unknown, attributes: Attributes): boolean {
+  if (!isRecord(value) || !isAttributes(value.finalAttributes) || !isRecord(value.grades)) return false;
+  if (!sameAttributes(value.finalAttributes, attributes)) return false;
+  const grades = value.grades;
+  return (
+    ATTRIBUTE_KEYS.every((key) => GRADES.includes(grades[key] as Grade)) &&
+    isText(value.title) &&
+    isText(value.description) &&
+    isText(value.evaluation) &&
+    isText(value.advice)
+  );
+}
+
 export function createInitialSnapshot(): GameSnapshot {
-  const now = new Date().toISOString();
   return {
     schemaVersion: SCHEMA_VERSION,
     rulesVersion: RULES_VERSION,
-    gameId: uuidv4(),
+    gameId: randomUUID(),
     revision: 0,
-    phase: 'idle',
+    phase: 'pendingEvent',
     attributes: { ...INITIAL_ATTRIBUTES },
     history: [],
     currentEvent: null,
@@ -37,8 +109,7 @@ export function createInitialSnapshot(): GameSnapshot {
   };
 }
 
-// ---------- Apply effects to attributes ----------
-export function applyEffects(current: Attributes, effects: Attributes): Attributes {
+export function applyEffects(current: Attributes, effects: Effects): Attributes {
   return {
     academics: current.academics + effects.academics,
     social: current.social + effects.social,
@@ -47,18 +118,15 @@ export function applyEffects(current: Attributes, effects: Attributes): Attribut
   };
 }
 
-// ---------- Check if game is completed ----------
 export function isGameCompleted(snapshot: GameSnapshot): boolean {
   return snapshot.history.length === TOTAL_DAYS;
 }
 
-// ---------- Get current day ----------
 export function getCurrentDay(snapshot: GameSnapshot): number {
   return snapshot.history.length + 1;
 }
 
-// ---------- Get grades for all attributes ----------
-export function getGrades(attributes: Attributes) {
+export function getGrades(attributes: Attributes): Record<AttributeKey, Grade> {
   return {
     academics: getGrade(attributes.academics, GRADE_THRESHOLDS.academics),
     social: getGrade(attributes.social, GRADE_THRESHOLDS.social),
@@ -67,77 +135,83 @@ export function getGrades(attributes: Attributes) {
   };
 }
 
-// ---------- Validate snapshot ----------
-export function validateSnapshot(snapshot: GameSnapshot): { isValid: boolean; reason?: string } {
-  // 1. Version check
-  if (snapshot.schemaVersion !== SCHEMA_VERSION) {
-    return { isValid: false, reason: 'unsupported schemaVersion: ' + snapshot.schemaVersion };
+export function validateSnapshot(value: unknown): { isValid: boolean; reason?: string } {
+  if (!isRecord(value)) return { isValid: false, reason: '快照必须是对象' };
+  if (value.schemaVersion !== SCHEMA_VERSION || value.rulesVersion !== RULES_VERSION) {
+    return { isValid: false, reason: '存档或规则版本不支持' };
+  }
+  if (!isText(value.gameId) || !Number.isSafeInteger(value.revision) || (value.revision as number) < 0) {
+    return { isValid: false, reason: '游戏标识或修订号不合法' };
+  }
+  if (!PHASES.includes(value.phase as Phase) || !isAttributes(value.attributes) || !Array.isArray(value.history)) {
+    return { isValid: false, reason: '阶段、属性或历史结构不合法' };
+  }
+  if (value.history.length > TOTAL_DAYS) return { isValid: false, reason: '历史记录超过 14 天' };
+
+  const history = value.history;
+  const eventIds = new Set<string>();
+  if (!history.every((record, index) => {
+    if (!isHistoryRecord(record, index + 1) || eventIds.has(record.eventId)) return false;
+    eventIds.add(record.eventId);
+    return true;
+  })) {
+    return { isValid: false, reason: '历史记录不连续或事件重复' };
   }
 
-  // 2. Required fields
-  if (!snapshot.gameId || typeof snapshot.gameId !== 'string') {
-    return { isValid: false, reason: 'invalid gameId' };
-  }
-  if (typeof snapshot.revision !== 'number' || snapshot.revision < 0) {
-    return { isValid: false, reason: 'invalid revision' };
-  }
-  const validPhases = ['idle', 'generating', 'awaitingChoice', 'showingResult', 'awaitingEnding', 'ended'];
-  if (!validPhases.includes(snapshot.phase)) {
-    return { isValid: false, reason: 'invalid phase' };
-  }
+  const recomputed = history.reduce<Attributes>((attributes, record) => applyEffects(attributes, record.effects), {
+    ...INITIAL_ATTRIBUTES,
+  });
+  if (!sameAttributes(recomputed, value.attributes)) return { isValid: false, reason: '属性与历史结算不一致' };
+  if (value.currentEvent !== null && !isEvent(value.currentEvent)) return { isValid: false, reason: '当前事件结构不合法' };
+  if (value.ending !== null && !isEnding(value.ending, value.attributes)) return { isValid: false, reason: '结局结构不合法' };
 
-  // 3. Attribute type check
-  const a = snapshot.attributes;
-  if (typeof a.academics !== 'number' || typeof a.social !== 'number' ||
-      typeof a.energy !== 'number' || typeof a.money !== 'number') {
-    return { isValid: false, reason: 'attributes must be numbers' };
+  const snapshot = value as unknown as GameSnapshot;
+  const completed = snapshot.history.length;
+  const latest = snapshot.history[snapshot.history.length - 1];
+  if (snapshot.phase === 'pendingEvent' && !(completed < TOTAL_DAYS && snapshot.currentEvent === null && snapshot.ending === null)) {
+    return { isValid: false, reason: '待生成事件阶段与快照内容不一致' };
   }
-
-  // 4. Recalculate attributes from history
-  let recomputed = { ...INITIAL_ATTRIBUTES };
-  for (const record of snapshot.history) {
-    recomputed = applyEffects(recomputed, record.effects);
+  if (
+    snapshot.phase === 'pendingChoice' &&
+    !(
+      completed < TOTAL_DAYS &&
+      snapshot.currentEvent !== null &&
+      snapshot.currentEvent.day === completed + 1 &&
+      snapshot.ending === null &&
+      !snapshot.history.some((record) => record.eventId === snapshot.currentEvent?.id)
+    )
+  ) {
+    return { isValid: false, reason: '待选择阶段与快照内容不一致' };
   }
-
-  if (recomputed.academics !== a.academics ||
-      recomputed.social !== a.social ||
-      recomputed.energy !== a.energy ||
-      recomputed.money !== a.money) {
-    return { isValid: false, reason: 'attribute mismatch with history recalculation' };
+  if (
+    snapshot.phase === 'showResult' &&
+    !(completed > 0 && completed < TOTAL_DAYS && snapshot.currentEvent !== null && latest && eventMatchesRecord(snapshot.currentEvent, latest))
+  ) {
+    return { isValid: false, reason: '结果阶段与最新历史不一致' };
   }
-
-  // 5. History day continuity
-  for (let i = 0; i < snapshot.history.length; i++) {
-    if (snapshot.history[i].day !== i + 1) {
-      return { isValid: false, reason: 'history day sequence broken at index ' + i };
-    }
+  if (
+    snapshot.phase === 'pendingEnding' &&
+    !(
+      completed === TOTAL_DAYS &&
+      snapshot.ending === null &&
+      (snapshot.currentEvent === null || (latest && eventMatchesRecord(snapshot.currentEvent, latest)))
+    )
+  ) {
+    return { isValid: false, reason: '待生成结局阶段与快照内容不一致' };
   }
-
+  if (
+    snapshot.phase === 'ended' &&
+    !(completed === TOTAL_DAYS && snapshot.currentEvent === null && isEnding(snapshot.ending, snapshot.attributes))
+  ) {
+    return { isValid: false, reason: '已结束阶段与结局内容不一致' };
+  }
   return { isValid: true };
 }
 
-// ---------- Increment revision ----------
 export function incrementRevision(snapshot: GameSnapshot): GameSnapshot {
-  return {
-    ...snapshot,
-    revision: snapshot.revision + 1,
-  };
+  return { ...snapshot, revision: snapshot.revision + 1 };
 }
 
-// ---------- Validate event effects ----------
-export function validateEventEffects(effects: Attributes): { isValid: boolean; reason?: string } {
-  const ranges = EFFECT_RANGES;
-  if (effects.academics < ranges.academics.min || effects.academics > ranges.academics.max) {
-    return { isValid: false, reason: 'academics effect out of range: ' + effects.academics };
-  }
-  if (effects.social < ranges.social.min || effects.social > ranges.social.max) {
-    return { isValid: false, reason: 'social effect out of range: ' + effects.social };
-  }
-  if (effects.energy < ranges.energy.min || effects.energy > ranges.energy.max) {
-    return { isValid: false, reason: 'energy effect out of range: ' + effects.energy };
-  }
-  if (effects.money < ranges.money.min || effects.money > ranges.money.max) {
-    return { isValid: false, reason: 'money effect out of range: ' + effects.money };
-  }
-  return { isValid: true };
+export function validateEventEffects(effects: Effects): { isValid: boolean; reason?: string } {
+  return isEffects(effects) ? { isValid: true } : { isValid: false, reason: '选项属性变化不是范围内整数' };
 }

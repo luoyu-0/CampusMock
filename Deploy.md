@@ -1,118 +1,134 @@
-# 运行说明
+# 运行与联调说明
 
-> 更新：2026-09-10 · 维护：成员 A
->
-> **当前能跑的只有前端 `client/`。** 数据走本地假 API（`client/src/api/`，14 天事件与结局都是写死的脚本），
-> **不需要后端、不需要 `server/` 起来、不需要任何 API 密钥**。等成员 B 的接口落地后，要动的文件列在最后一节。
+> 更新：2026-09-10 · 维护：成员 A / D
+
+当前 React 前端与 Express 游戏接口已经联通，可跑完 14 天并生成结局。服务端暂用模拟生成逻辑，后续由成员 C 将事件与结局生成替换为 DeepSeek 调用。
 
 ## 环境要求
 
-- Node.js 20 以上（实测 v24.18.0）、npm 10 以上（实测 11.16.0）。
-- 仓库根目录是 npm workspaces（`client` + `server`），依赖统一装在根 `node_modules`，不要在子目录单独 `npm install`。
+- Node.js 20 及以上版本。
+- npm 10 及以上版本。
+- 所有命令默认在仓库根目录执行。项目使用 npm workspaces，不要分别在 `client/` 和 `server/` 安装依赖。
 
-## 第一次安装
+## 首次安装
 
-```bat
-:: 先切到仓库根目录（有 package.json 和这份 Deploy.md 的那一层）
+```powershell
 npm install
+Copy-Item .env.example .env
 ```
 
-## 本地跑起来
+`.env` 中常用配置如下：
 
-```bat
+| 配置 | 默认值 | 作用 |
+| --- | --- | --- |
+| `PORT` | `3000` | Express 监听端口，也是 Vite 开发代理目标端口 |
+| `VITE_API_MODE` | `server` | `server` 请求 Express；`mock` 使用前端假 API |
+| `VITE_ENABLE_PROTO_BAR` | `false` | 是否在生产构建中保留开发走查面板 |
+| `DEEPSEEK_API_KEY` | 空 | 真实模型密钥，目前模拟生成模式无需填写 |
+| `DEEPSEEK_MODEL` | 空 | DeepSeek 模型名，接入模型时填写 |
+
+`.env` 已被 Git 忽略。API 密钥只能由后端读取，不得放入 `VITE_` 变量、前端源码或浏览器存档。
+
+## 前后端开发模式
+
+打开两个终端：
+
+```powershell
+# 终端 1
+npm run dev:server
+
+# 终端 2
 npm run dev:client
 ```
 
-终端会打印两条地址：
+- 前端：`http://localhost:5173/`
+- 后端健康检查：`http://localhost:3000/health`
+- API：`http://localhost:3000/api/`
 
-- `http://localhost:5173/` —— 本机看。
-- `http://<本机内网IP>:5173/` —— **局域网设备看这条**（验收要求「至少一台局域网设备完成事件生成与结算」）。手机连同一个 Wi-Fi，直接输这条地址。
+前端使用相对路径 `/api`，Vite 会代理到 `.env` 中 `PORT` 指定的 Express 服务。修改环境变量后应重启相关进程。停止服务时在对应终端按 `Ctrl + C`。
 
-停止：终端里 `Ctrl + C`。改代码保存即热更新，不用重启；改样式也是即时生效。
+## 前端独立开发模式
 
-## 校验与构建
+将 `.env` 改为：
 
-```bat
-npm run typecheck -w client
-npm run build -w client
-npm run preview -w client
+```dotenv
+VITE_API_MODE=mock
 ```
 
-- `build` 会先跑 `tsc --noEmit` 再打包，所以它同时是类型检查和产物构建。
-- 产物在 `client/dist/`：JS 281 KB（gzip 89 KB）、CSS 11.9 KB、12 张 webp 共 642 KB（文件名带 hash，`dist` 整个发出去才不会掉图）。
-- `preview` 是本地起个静态服务看构建结果，地址 `http://localhost:4173/`。
+重启 `npm run dev:client` 后，无需后端即可跑完 14 天。此模式适合页面开发、存档验证和失败注入；重新联调时记得改回 `server`。
 
-**根目录的 `npm run build` 目前会在 `server` 工作区失败**（`server/tsconfig.json` 还不存在）。那是 B/D 的活，前端单独跑上面三条。
+## 生产构建与一体化启动
 
-## 八个屏怎么逐屏看到
+```powershell
+npm run build
+npm start
+```
 
-产品里没有调试入口，评审用的**走查条**是页面顶部那条灰色横条（`.proto`，开发期专用）。它和真实玩家的操作是同一条路径：走查条只是「塞一份快照进来」，不是硬跳转，所以不会出现状态机到不了的假状态。
+访问 `http://localhost:3000/`。Express 会同时提供 `client/dist` 和 `/api`。代码更新后需重新执行 `npm run build`；`npm start` 只运行已有构建产物。
 
-| 屏 | 怎么到 |
+可按需单独执行：
+
+```powershell
+npm run typecheck -w client
+npm run build -w client
+npm run build -w server
+```
+
+## 局域网演示
+
+1. 运行 `ipconfig`，找到当前网络适配器的 IPv4 地址。
+2. 开发模式访问 `http://<本机内网IP>:5173/`；一体化模式访问 `http://<本机内网IP>:3000/`。
+3. 演示设备与开发机连接同一局域网。
+4. Windows 防火墙提示时允许 Node.js 访问专用网络。
+
+前端始终请求同一来源下的 `/api`，局域网设备不会错误请求自身的 `localhost`。部分校园网开启客户端隔离，设备无法互访时可改用电脑热点。
+
+localStorage 只在同一协议、主机和端口中共享。因此 `localhost:5173`、内网 IP 的 `:5173` 与 `:3000` 各有独立存档，这是浏览器的正常行为。
+
+## 页面走查
+
+开发环境默认显示顶部走查面板；生产构建默认隐藏。确需在生产构建中展示时，将 `VITE_ENABLE_PROTO_BAR=true` 后重新构建。
+
+| 状态 | 正常到达方式 |
 | --- | --- |
-| 开始页 | 直接访问。有本机存档时，按钮变成「继续上次的日记」 |
-| ① 待生成事件 | 走查条「① 待生成事件」（会停住不自动往下走，方便截图）。或点「开始第一天」后的 0.4~1.2 秒 |
-| ② 待选择 | 走查条「② 待选择」。或从 ① 等它生成完 |
-| ③ 展示结果 | 走查条「③ 展示结果」。或在 ② 选一个选项 |
-| ④ 待生成结局 | 走查条「④ 待生成结局」 |
-| ⑤ 已结束 | 走查条「⑤ 已结束」。或走查条「跑完整 14 天」到底 |
-| 错误·可重试 | 先点「下次请求·可重试」，再点任意推进动作（开始第一天 / 选选项 / 继续） |
-| 错误·不可重试 | 先点「下次请求·不可重试」，同上 |
+| 开始页 | 首次访问，或清除本机存档 |
+| 待生成事件 | 开始第一天或继续下一天时的短暂等待 |
+| 待选择 | 事件生成完成 |
+| 展示结果 | 选择一个选项并完成结算 |
+| 待生成结局 | 第 14 天结算后 |
+| 已结束 | 结局生成完成 |
 
-几个约定：
+走查面板可加载合法预设、清除存档并自动跑完整局。可重试和不可重试失败注入仅在 `VITE_API_MODE=mock` 时启用，避免开发工具伪装成服务端真实故障。
 
-- **失败注入只坏一次**：注入后再点「重试」就一定成功，这是为了演示重试链路，不是真失败。
-- **「跑完整 14 天」**会按 0.4~1.2 秒的随机延迟逐天推进，全程约 15 秒，中间每屏都真实经过。
-- **「清掉本机存档」**删的是 localStorage 里的 `campusmock:snapshot`，清完回到开始页。
-- **「设计标注」**默认关。勾上才显示写给团队看的说明框（`note`），产品界面不含这些文字。
-- 走查条**上线要删**：删 `client/src/App.tsx` 里 `<ProtoBar ... />` 那一段即可，其余代码不依赖它。
-- 存档恢复只在**同一浏览器、同一访问源（协议+主机+端口）**内成立。用 `localhost` 存过、再用内网 IP 打开，是两份互不相干的存档 —— 这是 localStorage 的既有行为，不是缺陷。
+## 关键文件
 
-## 改哪里
-
-| 想改的东西 | 文件 | 关键位置 |
-| --- | --- | --- |
-| 配色、字号、圆角、间距（所有视觉） | `client/src/styles/global.css` | 顶部 `:root` 变量 |
-| 开学日期与星期 | `client/src/state/calendar.ts` | `WEEKDAYS`、第 1 天的起始日 |
-| 精力/金钱的显示格式（负号、0 显示「没变」） | `client/src/format.ts` | `formatDelta`、`formatValue` |
-| 14 天事件文案与数值增减 | `client/src/api/script.ts` | `DAY_SCRIPT`、`eff()`、`INITIAL_ATTRIBUTES` |
-| 分档阈值与结局文案 | `client/src/api/ending.ts` | 阈值表、`evaluation` 文案 |
-| 假 API 的延迟、失败注入 | `client/src/api/mockApi.ts` | `LATENCY`、`setFault` |
-| 切屏时换哪套侧景 | `client/src/state/useGame.ts` | `sceneFor`（按「天数 + 屏序号」取模，确定值） |
-| 12 张插画的引用地址 | `client/src/sceneArt.ts` | 十行字面量 `new URL(...)` |
-| 顶部走查条（含预设与失败注入） | `client/src/components/ProtoBar.tsx` | 整文件 |
-| 存档写不进去时那条提示 | `client/src/App.tsx` | `saveFailed` 分支（样式在 `global.css` 的 `.save-warn`，布尔由 `useGame.ts` 的 `persist` 给出） |
-| 临时存档的键名与结构 | `client/src/state/store.ts` | `STORAGE_KEY` |
-
-## 接真后端时要动的地方（给 B / C / D）
-
-1. **只有 `client/src/api/mockApi.ts` 需要换成 `fetch`**。三个函数签名保持「发完整快照、收完整快照」不变，页面和状态机一行都不用改。Vite 已配好 `/api → http://localhost:3000` 代理。
-2. **`client/src/state/store.ts` 是临时 localStorage**，等成员 D 的 `client/src/storage/` 落地就整文件删掉。`useGame.ts` 里用到它的只有三处：`saveSnapshot`（写入）、`loadSnapshot`（挂载时恢复）、`clearSnapshot`（开新局）。**替换时 `saveSnapshot` 必须继续返回 `boolean`**（写成功 `true`、写失败 `false`），这个返回值现在驱动着「这台设备写不进存档」那条提示；写成不返回值的样子，提示条就永远是死的，正撞验收项「不假装保存成功」。
-3. **`client/src/state/types.ts` 是临时类型**，字段严格照 [接口约定](docs/接口约定.md) 写，`shared/` 公共类型定下来后直接换成 import，删掉本地这份。
+| 内容 | 文件 |
+| --- | --- |
+| 前端 API 模式与 `fetch` | `client/src/api/gameApi.ts` |
+| 前端假 API | `client/src/api/mockApi.ts` |
+| 页面状态机与响应接纳 | `client/src/state/useGame.ts` |
+| 存档校验与恢复 | `client/src/storage/index.ts` |
+| Vite 环境与 API 代理 | `client/vite.config.ts` |
+| Express 入口与静态托管 | `server/src/index.ts` |
+| API 控制器 | `server/src/game/controller.ts` |
+| 快照校验与游戏规则 | `server/src/game/service.ts` |
+| 接口类型 | `server/src/game/types.ts` |
 
 ## 常见问题
 
-- **手机打不开内网地址**：Windows 首次监听会弹防火墙授权框，必须勾「专用网络」；仍不通通常是校园网/公司网开了 AP 隔离，改用笔记本开热点给手机连。
-- **5173 被占用**：Vite 会自动改用 5174，终端会提示。要固定就改 `client/vite.config.ts` 里的 `port`。
-- **刷新后直接进了第 N 天**：那是存档恢复，符合验收项。想回到第 1 天，点走查条「清掉本机存档」，或走完整流程时点「开始第一天」（它会先清旧档）。
-- **两侧插画没出来**：插画下面各压着一层手绘 SVG 兜底，掉图不会白屏，只是观感退回简版。
-- **顶部出现「这台设备现在写不进存档」**：是本机写入被拦或空间满了（无痕窗口、隐私插件最常见），不是接口故障。这一局还能继续玩，但刷新会退回上一次成功保存的位置；换回普通窗口或关掉插件后，下一次转换写成功，提示条自己消失。
-- **顶部那条灰条是什么**：开发期走查面板，不属于产品界面，见上一节。
+- **页面提示网络错误**：先打开 `/health`，确认 Express 已启动；再检查 `.env` 的 `PORT`，修改后重启 Vite 和 Express。
+- **运行 `npm start` 后页面为空或仍是旧版本**：先执行 `npm run build`，再重启服务。
+- **刷新后进入第 N 天**：这是 localStorage 恢复。需要重新开始时使用页面中的重新开始或开发走查面板清除存档。
+- **顶部提示无法保存**：页面会保留待保存响应且暂停推进。处理浏览器存储限制后点击重试保存，不会重复请求事件或重复结算。
+- **多标签页出现冲突提示**：另一标签页已推进存档。重新载入最新存档后再操作。
+- **5173 或 3000 被占用**：关闭占用进程；也可修改 `PORT` 调整后端端口，前端开发端口在 `client/vite.config.ts` 中配置。
 
-## 是否需要公网部署
+## 当前验收状态
 
-不需要。项目约束里写明「MVP 仅需支持 localhost 和局域网访问，不要求公网部署」，运行方式按开发规划是**由 Express 直接提供 `client/dist` 与 API**（成员 D 负责）。
-
-如果临时想把界面发给别人看：`npm run build -w client` 之后把 `client/dist/` 整个目录拖到 Netlify / Vercel 即可 —— 现在假 API 全在前端，纯静态就能跑完整局。**接上真后端之后这条不再成立**，必须连后端一起部署。
-
-## 本轮验收对照
-
-- [x] 8 屏齐全，含两类错误屏。
-- [x] 选择前不泄露效果：带符号数字只可能在 ③ 出现（`DeltaRow` 只在 `ResultCard` 内渲染），「学业」「社交」字样只出现在结局屏（`Grades` 只挂在结局页）和标注框里。逐屏可见文字断言是在原型那一轮跑的（除结局屏外 7 屏均不含字样），React 这轮按组件挂载位置复核了同一条规则。
-- [x] 页面刷新后可恢复。四个阶段（①②③④）各刷新一次实测：每次都回到**同一个态的同一天**，`history` 长度不变，不跳天也不重复结算。
-- [x] 生成等待、失败重试、防重复结算（`revision` 守卫 + 重试重放同一次请求）。同一选项连点三次只 `rev +1`、只多一篇日记；结局生成前注入可重试失败并刷新，存档仍是 `rev 14 / pendingEnding`（**第 14 天没被重做**），点重试后才到 `ended`。
-- [x] 本机写不进存档时不假装保存成功。把 `setItem` 打桩成抛异常后顶部出现常驻提示，游戏仍能继续（不因写不进本机而作废这一局），写入恢复后提示条自行消失。
-- [x] 窄屏 390 与桌面 1440 无横向溢出；localhost + 局域网两个访问源。
-- [ ] 真 AI 内容、真接口联调 —— 等 B、C。
-- [ ] 正式存档模块与一键启动脚本 —— 等 D。
-- [ ] 深色模式（未做，不在本轮范围）；超长 AI 文案（>800 字）未测；低端设备的动效帧率未测。
+- [x] 根目录统一安装、构建和一体化启动。
+- [x] React 通过 Vite 代理调用 Express。
+- [x] Express 提供 API、健康检查与生产静态页面。
+- [x] 真实 HTTP 跑通 14 天、14 次结算和结局生成。
+- [x] 刷新恢复、防重复结算、过期响应和多标签页冲突处理。
+- [ ] DeepSeek 真实事件与结局生成。
+- [ ] 在最终演示网络中使用第二台设备完成局域网验收。
