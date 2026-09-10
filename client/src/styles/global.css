@@ -1,0 +1,308 @@
+/* ============================================================
+   改配色和字体只看这一块，下面的样式都引用这里的变量
+   ============================================================ */
+:root{
+  --ink:#2c3345;              /* 主文字 */
+  --ink-soft:#6b7488;         /* 次要文字 */
+  --ink-faint:#9aa3b5;        /* 提示文字 */
+  --paper:#ffffff;            /* 卡片底 */
+  --sky-top:#dbe9ff;          /* 背景渐变上 */
+  --sky-bottom:#ffeede;       /* 背景渐变下 */
+  --brand:#4a6cf7;            /* 校园蓝，主按钮 */
+  --brand-deep:#3550c9;
+  --brand-soft:#eef2ff;
+  --energy:#f0913a;           /* 精力 */
+  --energy-soft:#fff3e6;
+  --money:#2fa36b;            /* 金钱 */
+  --money-soft:#e9f7ef;
+  --line:#e6ebf5;
+  --danger:#d9534f;
+  --danger-soft:#fdeeee;
+  --grade-a:#2fa36b;
+  --grade-b:#4a6cf7;
+  --grade-c:#e0a33c;
+  --grade-d:#d97a7a;
+  --radius:20px;
+  --shadow:0 10px 30px rgba(44,51,69,.08);
+  --font-diary:"Songti SC","STSong","SimSun",Georgia,serif;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  color:var(--ink);
+  font-family:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:16px;line-height:1.75;
+  background:linear-gradient(170deg,var(--sky-top) 0%,#f3f0ff 45%,var(--sky-bottom) 100%);
+  background-attachment:fixed;
+}
+
+/* ---------- 走查条：设计评审用，不属于产品界面 ---------- */
+.proto{
+  position:sticky;top:0;z-index:50;
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:10px 12px;
+  background:rgba(255,255,255,.86);
+  backdrop-filter:blur(8px);
+  border-bottom:1px dashed var(--line);
+  font-size:12px;
+}
+.proto .label{color:var(--ink-faint);margin-right:2px}
+.proto button{
+  font:inherit;font-size:12px;color:var(--ink-soft);
+  background:#fff;border:1px solid var(--line);border-radius:999px;
+  padding:4px 10px;cursor:pointer;
+}
+.proto button:hover{border-color:var(--brand);color:var(--brand)}
+.proto button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.proto .notes-toggle{margin-left:auto;display:flex;align-items:center;gap:5px;color:var(--ink-faint)}
+
+/* ---------- 背景插画 ---------- */
+.scene{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.scene svg{position:absolute}
+.scene .far{left:0;right:0;bottom:0;width:100%;height:auto}
+.scene .float-a{top:14%;left:6%;width:120px;opacity:.9}
+.scene .float-b{top:9%;right:8%;width:150px;opacity:.85}
+@media (max-width:900px){.scene .float-a,.scene .float-b,.scene .side{display:none}}
+
+/* 两侧远景共 5 套主题，由 .scene 上的 data-scene 决定显示哪一套（切屏时随机换，见脚本末尾）。
+   纸页和视差容器是共用的，只有建筑组按主题替换。 */
+.scene .th{display:none}
+.scene[data-scene="1"] .th-1,.scene[data-scene="2"] .th-2,.scene[data-scene="3"] .th-3,
+.scene[data-scene="4"] .th-4,.scene[data-scene="5"] .th-5{display:block;animation:cm-scene-in 1s ease both}
+@keyframes cm-scene-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .scene[data-scene="1"] .th-1,.scene[data-scene="2"] .th-2,.scene[data-scene="3"] .th-3,
+  .scene[data-scene="4"] .th-4,.scene[data-scene="5"] .th-5{animation:none}
+}
+
+/* 两侧远景。宽度锁在窄栏两侧的留白内：留白本身 = 50vw - 280px，再让出 100px 呼吸位。
+   这 100px 要同时容下两件事：纸页用 right:-6% / -14% 故意探出容器，以及鼠标视差最大 ±17px 的横向位移。
+   ≥1440px 时由 19vw 封顶，所以桌面观感不受这条 calc 影响。 */
+.scene .side{
+  position:absolute;width:min(19vw,calc(50vw - 380px));opacity:.45;
+  transform:translate3d(calc(var(--mx,0) * var(--depth,20) * 1px),calc(var(--my,0) * var(--depth,20) * .6px),0);
+  transition:transform .6s cubic-bezier(.22,.61,.36,1);
+}
+.scene .side-l{left:2.5%;bottom:15%;--depth:26}
+.scene .side-r{right:2.5%;bottom:18%;--depth:-34}
+/* 中段这两张纸页补建筑组上方留白；复用 .side 做视差容器、.page 做动画层，两层各占一个 transform */
+.scene .mid{opacity:.4}
+.scene .mid-l{left:8.5%;top:30%;bottom:auto;width:min(5.4vw,78px);--depth:46}
+.scene .mid-r{right:7.5%;top:22%;bottom:auto;width:min(4.6vw,66px);--depth:-56}
+.scene .mid .page{position:static;display:block;width:100%}
+.scene .mid-l .page{--rot:13deg;animation-duration:18s}
+.scene .mid-r .page{--rot:-8deg;animation-duration:22s;animation-delay:-11s}
+.scene .side svg,.scene .side .side-art{position:static;display:block;width:100%;height:auto;
+  animation:cm-drift 23s ease-in-out infinite alternate}
+.scene .side-r svg,.scene .side-r .side-art{animation-duration:28s;animation-delay:-7s}
+/* 位图是透明水彩小景，盖不住下面的兜底 SVG，所以加载成功后直接把矢量图收起来 */
+.scene .side.has-art svg{display:none}
+@keyframes cm-drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-10px,0)}}
+
+/* 漂浮的日记纸页 */
+.scene .page{
+  position:absolute;width:31%;aspect-ratio:5/6.6;border-radius:2px;
+  background:repeating-linear-gradient(to bottom,transparent 0 8px,rgba(120,110,92,.3) 8px 9px),#fffdf7;
+  box-shadow:0 8px 18px rgba(44,51,69,.16);
+  animation:cm-page 17s ease-in-out infinite alternate;
+}
+@keyframes cm-page{
+  from{transform:rotate(var(--rot,-7deg)) translate3d(0,0,0)}
+  to{transform:rotate(var(--rot,-7deg)) translate3d(0,-14px,0)}
+}
+.scene .side-l .page{top:-8%;right:-6%;--rot:11deg;animation-duration:19s}
+.scene .side-r .page{top:-14%;left:-8%;--rot:-9deg;animation-duration:15s;animation-delay:-4s}
+.scene .side-r .page.b{top:34%;right:-14%;left:auto;width:24%;--rot:6deg;animation-duration:21s;animation-delay:-9s}
+@media (prefers-reduced-motion:reduce){
+  .scene .side{transform:none;transition:none}
+  .scene .side svg,.scene .side .side-art,.scene .page{animation:none}
+}
+
+/* ---------- 主舞台 ---------- */
+.stage{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:18px 16px 64px}
+.screen{display:none}
+.screen.on{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- 游戏内顶栏（天数 + 资源） ---------- */
+.chrome{margin-bottom:14px}
+.day-line{display:flex;align-items:baseline;gap:10px}
+.day-line .d{font-size:22px;font-weight:700;letter-spacing:.5px}
+.day-line .w{font-size:13px;color:var(--ink-soft)}
+.hud{display:flex;gap:8px;margin-top:10px}
+.pill{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px 5px 9px;border-radius:999px;
+  font-size:13px;font-weight:600;
+  background:var(--paper);box-shadow:var(--shadow);
+}
+.pill .ico{width:16px;height:16px;flex:none}
+.pill.energy{color:var(--energy)}
+.pill.money{color:var(--money)}
+.dots{display:flex;gap:5px;margin-top:12px}
+.dots i{width:100%;height:4px;border-radius:999px;background:#fff;opacity:.55}
+.dots i.done{opacity:1;background:var(--brand)}
+.dots i.now{opacity:1;background:var(--energy)}
+
+/* ---------- 卡片 ---------- */
+.card{
+  background:var(--paper);border-radius:var(--radius);
+  padding:22px 20px;box-shadow:var(--shadow);margin-bottom:14px;
+}
+.card .kicker{font-size:12px;letter-spacing:2px;color:var(--ink-faint);margin-bottom:8px}
+.etitle{font-family:var(--font-diary);font-size:24px;line-height:1.4;margin:0 0 12px}
+.body{font-size:15.5px;color:#3a4256;margin:0}
+.body p{margin:0 0 1em}
+.body p:last-child{margin-bottom:0}
+
+/* ---------- 选项 ---------- */
+.ask{font-size:14px;color:var(--ink-soft);margin:18px 0 10px}
+.opt{
+  display:block;width:100%;text-align:left;font:inherit;font-size:15px;
+  background:#fbfcff;border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:10px;cursor:pointer;color:var(--ink);
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.opt:hover{border-color:var(--brand);background:var(--brand-soft);transform:translateY(-1px)}
+.opt small{display:block;font-size:12px;color:var(--ink-faint);margin-top:3px}
+
+/* ---------- 按钮 ---------- */
+.btn{
+  display:block;width:100%;font:inherit;font-size:16px;font-weight:600;
+  padding:14px 18px;border-radius:14px;border:0;cursor:pointer;
+  background:linear-gradient(135deg,var(--brand),var(--brand-deep));color:#fff;
+  box-shadow:0 8px 20px rgba(74,108,247,.28);
+}
+.btn:hover{filter:brightness(1.05)}
+.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand);box-shadow:none;font-weight:500}
+.btn.muted{background:#fff;color:var(--ink-soft);border:1px solid var(--line);box-shadow:none;font-weight:500}
+.btn-row{display:flex;flex-direction:column;gap:10px}
+.hint{font-size:12.5px;color:var(--ink-faint);text-align:center;margin:12px 0 0}
+
+/* ---------- 结算变化 ---------- */
+.chosen{font-size:13.5px;color:var(--ink-soft);margin:0 0 12px}
+.chosen b{color:var(--ink);font-weight:600}
+.delta{display:flex;gap:10px;margin-top:16px}
+.delta .d{
+  flex:1;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-radius:14px;
+}
+.delta .down{background:var(--energy-soft)}
+.delta .up{background:var(--money-soft)}
+.delta .name{font-size:13px;color:var(--ink-soft)}
+.delta .v{font-size:19px;font-weight:700}
+.delta .v.neg{color:var(--danger)}
+.delta .v.pos{color:var(--money)}
+
+/* ---------- 前情抽屉 ---------- */
+.hist{
+  background:rgba(255,255,255,.7);border:1px solid var(--line);
+  border-radius:var(--radius);padding:0;margin-bottom:14px;overflow:hidden;
+}
+.hist > summary{
+  list-style:none;cursor:pointer;padding:14px 18px;
+  font-size:14px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;
+}
+.hist > summary::-webkit-details-marker{display:none}
+.hist > summary::after{content:"展开";font-size:12px;color:var(--brand)}
+.hist[open] > summary::after{content:"收起"}
+.hist ul{list-style:none;margin:0;padding:4px 18px 18px}
+.hist li{padding:10px 0;border-top:1px dashed var(--line);font-size:13.5px;color:var(--ink-soft)}
+.hist li b{display:block;color:var(--ink);font-weight:600;font-size:14px;margin-bottom:2px}
+
+/* ---------- 结局 ---------- */
+.ending-hero{border-radius:var(--radius);overflow:hidden}
+.ending-hero.art-frame{max-width:none;height:180px;aspect-ratio:auto;margin:0 0 22px;box-shadow:none;background:#e9eefc}
+.ending-hero.art-frame .glow{background:radial-gradient(46% 66% at 50% 60%,rgba(255,226,170,.55),rgba(255,226,170,0) 72%)}
+.grades{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 4px}
+.grade{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-radius:14px;background:#fbfcff;border:1px solid var(--line);
+}
+.grade .n{font-size:13.5px;color:var(--ink-soft)}
+.grade .g{font-size:18px;font-weight:800;letter-spacing:1px}
+.g.a{color:var(--grade-a)} .g.b{color:var(--grade-b)} .g.c{color:var(--grade-c)} .g.d{color:var(--grade-d)}
+.sec{margin-top:20px}
+.sec .h{font-size:13px;letter-spacing:2px;color:var(--brand);margin-bottom:6px}
+
+/* ---------- 等待态 ---------- */
+.skeleton .l{height:13px;border-radius:6px;background:linear-gradient(90deg,#eef1f8,#e2e8f5,#eef1f8);
+  background-size:200% 100%;animation:sh 1.4s infinite;margin-bottom:11px}
+@keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
+.wait{text-align:center;padding:26px 0 10px}
+.wait .spin{
+  width:52px;height:52px;margin:0 auto 16px;border-radius:50%;
+  border:3px solid var(--brand-soft);border-top-color:var(--brand);
+  animation:sp 1s linear infinite;
+}
+@keyframes sp{to{transform:rotate(360deg)}}
+.wait .t{font-size:15px;color:var(--ink-soft)}
+.wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
+
+/* ---------- 错误态 ---------- */
+.card.err{background:var(--danger-soft);border:1px solid #f6d9d9}
+.card.err .t{font-size:17px;font-weight:700;margin:0 0 8px;color:#9c3f3c}
+.card.err .m{font-size:14.5px;color:#7d5250;margin:0}
+.err-ico{width:44px;height:44px;margin-bottom:12px}
+
+/* ---------- 开始页 ---------- */
+.hero{padding:26px 2px 6px;text-align:center}
+.art-frame{
+  position:relative;width:100%;max-width:330px;aspect-ratio:330/200;
+  margin:0 auto 6px;border-radius:24px;overflow:hidden;background:#e9eefc;
+  box-shadow:0 14px 34px rgba(44,51,69,.16);
+}
+.art-frame .art{position:absolute;inset:0;width:100%;height:100%;display:block}
+.art-frame .photo{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  animation:cm-kenburns 42s ease-in-out infinite alternate;
+}
+@keyframes cm-kenburns{
+  from{transform:scale(1.02) translate3d(-.8%,-.6%,0)}
+  to{transform:scale(1.09) translate3d(.8%,.6%,0)}
+}
+.art-frame .glow{
+  position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(58% 46% at 50% 30%,rgba(255,226,170,.6),rgba(255,226,170,0) 70%);
+  animation:cm-breathe 9s ease-in-out infinite;
+}
+@keyframes cm-breathe{0%,100%{opacity:.4}50%{opacity:.9}}
+.art-frame .leaves{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.art-frame .leaves i{
+  position:absolute;top:-14px;left:var(--x,20%);width:9px;height:9px;
+  background:var(--leaf,#e0a33c);border-radius:0 60% 0 60%;opacity:0;
+  animation:cm-fall var(--t,9s) linear var(--d,0s) infinite;
+}
+@keyframes cm-fall{
+  0%{opacity:0;transform:translate3d(0,0,0) rotate(0deg)}
+  8%{opacity:.9}
+  50%{transform:translate3d(18px,102px,0) rotate(180deg)}
+  92%{opacity:.8}
+  100%{opacity:0;transform:translate3d(-6px,212px,0) rotate(360deg)}
+}
+@media (prefers-reduced-motion:reduce){
+  .art-frame .photo,.art-frame .glow,.art-frame .leaves i{animation:none}
+  .art-frame .leaves i{display:none}
+}
+.hero h1{font-family:var(--font-diary);font-size:32px;margin:14px 0 6px;letter-spacing:2px}
+.hero .sub{font-size:14.5px;color:var(--ink-soft);margin:0 0 4px}
+.hero .desc{font-size:13.5px;color:var(--ink-faint);margin:16px auto 24px;max-width:330px;line-height:1.85}
+
+/* 桌面端：只把两处插画放大。窄栏保持 560px，否则 350 字的事件卡会拉成一行四十多字的长句。
+   插画用 margin-left:50% + translateX(-50%) 对称溢出窄栏，宽度上限锁在 92vw 内，不会撑出横向滚动条。 */
+@media (min-width:768px){
+  .hero .art-frame{width:min(660px,92vw);max-width:none;margin-left:50%;transform:translateX(-50%)}
+  .hero h1{font-size:40px;margin-top:22px}
+  .hero .desc{max-width:520px;font-size:14.5px}
+  .ending-hero.art-frame{height:240px}
+}
+
+/* ---------- 设计标注 ---------- */
+.note{
+  display:none;margin:10px 0 0;padding:9px 12px;
+  font-size:12.5px;line-height:1.6;color:#8a6a12;
+  background:#fff8e6;border:1px dashed #e8c96a;border-radius:10px;
+}
+body.show-notes .note{display:block}

@@ -1,0 +1,152 @@
+/* 本地假 API。刻意做成「无状态 + 纯函数」，跟真接口一样：浏览器把完整快照发过来，
+   这里返回下一份快照。所以重复提交同一份快照必然得到同一份结果，不会二次累加。
+   换成成员 B 的真服务时，只需要把这个文件的三个函数换成 fetch，其他代码不用动。 */
+
+import type { ApiError, AttributeKey, ErrorResponse, GameEvent, Snapshot, SuccessResponse } from '../state/types'
+import { TOTAL_DAYS, advanceOneDay, eventForDay } from './script'
+import { buildEnding } from './ending'
+
+export type FaultKind = 'none' | 'retryable' | 'fatal'
+
+let fault: FaultKind = 'none'
+let seq = 0
+
+/** 只有走查面板会调它：让下一次请求返回失败响应，用来验重试与不可重试两屏。 */
+export function setFault(next: FaultKind) {
+  fault = next
+}
+
+const LATENCY = { min: 420, max: 1150 }
+
+function wait() {
+  const ms = LATENCY.min + Math.random() * (LATENCY.max - LATENCY.min)
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+function nextRequestId() {
+  return `mock-${Date.now().toString(36)}-${++seq}`
+}
+
+/** base 是请求方发来的那份快照，next 是本次转换的结果；
+ *  baseRevision 必须取 base，客户端靠它判断响应有没有过期。 */
+function ok(base: Snapshot, next: Snapshot): SuccessResponse {
+  return { requestId: nextRequestId(), baseRevision: base.revision, snapshot: next }
+}
+
+function fail(code: string, message: string, retryable: boolean): ErrorResponse {
+  return { requestId: nextRequestId(), error: { code, message, retryable } satisfies ApiError }
+}
+
+/* 游戏规则里的单次增减范围。假数据本来就在范围内，这条校验是照着 B 的服务端校验写的：
+   真模型给出越界值时，界面要走的分支已经在原型里画好了。 */
+const RANGE: Record<AttributeKey, [number, number]> = {
+  academics: [-2, 3],
+  social: [-2, 3],
+  energy: [-2, 2],
+  money: [-300, 300],
+}
+
+function outOfRange(event: GameEvent): boolean {
+  const keys = Object.keys(RANGE) as AttributeKey[]
+  return event.options.some(option =>
+    keys.some(key => {
+      const [lo, hi] = RANGE[key]
+      const value = option.effects[key]
+      return !Number.isInteger(value) || value < lo || value > hi
+    }),
+  )
+}
+
+function injectedFault(): ErrorResponse | null {
+  if (fault === 'none') return null
+  const retryable = fault === 'retryable'
+  fault = 'none'
+  return retryable
+    ? fail('MODEL_TIMEOUT', '网络好像打了个盹，前面写好的内容都还在。', true)
+    : fail(
+        'SNAPSHOT_VERSION_UNSUPPORTED',
+        '存档的版本和当前规则对不上。我没有改动它，也没有清空它——你之前的记录还在原处。',
+        false,
+      )
+}
+
+/** POST /api/events/generate */
+export async function generateEvent(snapshot: Snapshot): Promise<SuccessResponse | ErrorResponse> {
+  await wait()
+  const injected = injectedFault()
+  if (injected) return injected
+
+  // 待选择说明有一局事件已经生成好但还没结算：直接返回它，不重新抽取（接口约定的幂等分支）
+  if (snapshot.phase === 'pendingChoice' && snapshot.currentEvent) {
+    return ok(snapshot, snapshot)
+  }
+
+  const day = snapshot.history.length + 1
+  if (day > TOTAL_DAYS) {
+    return fail('GAME_ALREADY_DONE', '两周已经写满了。', false)
+  }
+
+  const event = eventForDay(day)
+  if (outOfRange(event)) {
+    return fail('EFFECT_OUT_OF_RANGE', '这一次生成的数值不对，我重新问一次。', true)
+  }
+
+  const next: Snapshot = {
+    ...snapshot,
+    revision: snapshot.revision + 1,
+    phase: 'pendingChoice',
+    currentEvent: event,
+  }
+  return ok(snapshot, next)
+}
+
+/** POST /api/events/choose —— 确定性算术，不调模型 */
+export async function chooseOption(
+  snapshot: Snapshot,
+  eventId: string,
+  optionId: string,
+): Promise<SuccessResponse | ErrorResponse> {
+  await wait()
+  const injected = injectedFault()
+  if (injected) return injected
+
+  // 该事件已在历史里：返回既有结算，绝不第二次累加
+  if (snapshot.history.some(entry => entry.eventId === eventId)) {
+    return ok(snapshot, snapshot)
+  }
+
+  const event = snapshot.currentEvent
+  if (!event || event.id !== eventId || snapshot.phase !== 'pendingChoice') {
+    return fail('STAGE_MISMATCH', '这一步现在不能做。', false)
+  }
+  const index = event.options.findIndex(option => option.id === optionId)
+  if (index < 0) {
+    return fail('OPTION_NOT_FOUND', '找不到这个选项。', false)
+  }
+
+  return ok(snapshot, advanceOneDay(snapshot, event, index))
+}
+
+/** POST /api/endings/generate */
+export async function generateEnding(snapshot: Snapshot): Promise<SuccessResponse | ErrorResponse> {
+  await wait()
+  const injected = injectedFault()
+  if (injected) return injected
+
+  // 结局已经生成过就返回保存的那一份，刷新和重试都拿同一个
+  if (snapshot.ending) {
+    return ok(snapshot, snapshot)
+  }
+  if (snapshot.history.length < TOTAL_DAYS) {
+    return fail('GAME_NOT_FINISHED', '还没写完两周。', false)
+  }
+
+  const next: Snapshot = {
+    ...snapshot,
+    revision: snapshot.revision + 1,
+    phase: 'ended',
+    currentEvent: null,
+    ending: buildEnding(snapshot.attributes),
+  }
+  return ok(snapshot, next)
+}

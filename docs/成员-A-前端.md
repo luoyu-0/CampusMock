@@ -5,8 +5,9 @@
 - 界面原型已出第一版，等团队过一遍视觉与状态划分。
 - 主视觉方向已从「手绘内联 SVG」换成「AI 生成插画 + CSS 动效」，开始页与结局页两处都已替换，等确认是否作为最终视觉基调。
 - 桌面端两侧远景已从内联 SVG 换成 5 套 AI 生成水彩小景（切屏随机换，兜底仍留着一层 SVG），等团队看过一遍：水彩是否比矢量更贴合「心理治愈」基调、透明度 .45 是否过淡、以及 12 张图合计 642 KB 的体积能否接受。
-- 下一步：补 `client/` 脚手架（当前 `client/package.json` 未声明任何依赖，缺 `index.html`、`vite.config.ts`、`tsconfig.json`），把原型拆成 React 组件，插画按 `src/assets/` 里的模块导入。背景主题在 React 里要换成按天序号取模（`day % 5 + 1`）而不是随机 —— 随机值放进 render 里会在无关重渲染时闪变，取模既可复现又保证每换一天都不同。
-- 阻塞条件：等 `shared/` 公共类型归属确定。不阻塞的话可以先用本地临时类型跑假数据全流程。
+- **React 版已跑通整局（2026-09-10 本轮）**：`client/` 脚手架 + 8 屏组件 + 快照状态机 + 本地假 API，不起后端、不要密钥就能从第 1 天走到结局。运行方式与「改哪里」对照表见 [Deploy.md](../Deploy.md)。按本轮约定**未提交**，全部留在工作区。
+- 下一步能做的都做完了，剩下的都卡在别人身上：真接口与真实文案落地后换掉 `src/api/mockApi.ts` 的三个函数（签名不用变）；成员 D 的 `client/src/storage/` 落地后整文件删掉临时的 `src/state/store.ts`。
+- 阻塞条件：`shared/` 公共类型归属仍未定（见待协作事项 1），我先写了一份临时的 `src/state/types.ts`。真接口上线时这份临时类型要和 B 的 `shared/` 对一次表，工作量集中在字段可选性上。
 
 ## 已完成内容
 
@@ -24,24 +25,37 @@
 - 人眼过了一遍矢量版后重画过三处：第 5 套的亭子白柱在 .45 透明度下几乎看不见（加描边、补栏板）、桥只剩一条细弧线（改成填充的桥身 + 桥面 + 栏杆立柱）、垂柳原本是个箭头形色块（改成树冠 + 下垂枝条）；第 4 套的旗杆原本悬在看台上方 28px，已接到屋脊。换成水彩后这三处只影响兜底图，仍然保留。
 - `client/design/README.md`：文件清单与分享注意事项、打开方式、八屏与 `phase` 对照表、`:root` 变量改色对照、动效清单、素材来源与合规提示、已验证与未验证清单。
 - 原型文案按真实字量写：事件详情约 350 字中文、3 个选项、结果文案约 120 字，用来暴露排版问题，不是占位符。
+- **`client/` 脚手架**：Vite 8 + React 19 + TypeScript 严格模式（`strict` + `noUnusedLocals`/`noUnusedParameters`）。依赖装在 `client/package.json`，仓库根是 npm workspaces（`client` + `server`），根 `node_modules` 统一。`vite.config.ts` 里 `host: true` 是给「局域网设备上完成一次结算」这条验收留的，`/api` 代理到 `http://localhost:3000`（端口取 `.env.example` 的 `PORT`），现在还没人用。
+- **样式整体搬进 `client/src/styles/global.css`（11.7 KB）**：原型那份样式**逐字复制、一个字没删**，`:root` 变量、动效、断点全部原样。React 里靠条件渲染天然只挂一屏，`.screen{display:none}` / `.screen.on{display:block;animation:fade .3s}` 这两条改成了给外层一个带 `key` 的 `.screen on` 包装来复用（见验证记录）。改配色仍然只改 `:root`。
+- **8 屏拆成 `pages/` + `components/`**：`StartPage` / `GamePage`（①②③④ 四个中间态共用，顶栏一样，只换卡片和底部按钮）/ `EndingPage` / `ErrorPage`；组件按职责分 `Chrome`（顶栏 + 档位 + 历史）、`Cards`（事件卡 / 结果卡 / 等待卡 / 错误卡）、`SceneBackdrop`（两侧远景 + 视差）、`ArtFrame` + `art/`（主视觉与内联 SVG 兜底）、`Photo`（位图加载状态机）、`ProtoBar`。内联 SVG 是从 `design/prototype.html` 机械转成 JSX 的，注释里标了出处，别手改缩进。
+- **状态机 `client/src/state/useGame.ts`（170 行）**：调用一律「发完整快照、收完整快照」，所以刷新和重试都不会二次累加。这一层独占 `revision` 比较、过期响应丢弃、localStorage 读写；页面组件只接 props 和回调，就是待协作事项 3 里提给成员 D 的那个接缝，D 接手时只需要把这一层的存储调用换掉。
+- **本地假 API `client/src/api/`**：`script.ts` 是 14 天事件脚本（每天 3 个选项、每条 effects 都落在游戏规则已确认的单次增减范围内）+ `advanceOneDay` 等纯函数；`ending.ts` 按已确认阈值表算 A~D 档并出四段文案；`mockApi.ts` 是三个 async 纯函数，带 0.4~1.2 秒可配置延迟、`setFault()` 一次性失败注入、越界数值自检（`EFFECT_OUT_OF_RANGE`）、以及幂等分支（同一个 `eventId` 重复提交不二次结算）。
+- **走查条改造成「塞快照 + 注入失败」**：原型里它能直接跳到任意一屏，React 里不行——状态机跑起来之后中间态只能由真实转换到达，硬跳会造出不存在的状态。所以改成每个预设先构造一份合法快照塞进状态机，`hold` 标记决定要不要立刻补接口（①④ 两个态要停住给评审截图）。它只写 localStorage 和状态，不碰产品代码路径，上线删 `App.tsx` 里那一行即可。
+- **12 张插画按 Vite 静态资源导入**：`src/sceneArt.ts` 里十行字面量 `new URL('../design/assets/side-N-l.webp', import.meta.url).href`，等价于原型里的按需补 `src`（未选中的主题根本不请求）。**路径必须是字面量**，写成变量 Vite 就静态分析不到、不会把文件发进产物。没有放 `public/`，所以拿得到内容 hash。
+- **临时存档 `client/src/state/store.ts`**：键名 `campusmock:snapshot`，读回来先做结构校验，**校验不过时不清空、不改写**，只提示版本对不上（对应「不静默清空存档」那条要求）。文件头写明是给成员 D 的 `src/storage/` 落地后整文件删除的临时件。
+- **`Deploy.md`（仓库根）**：安装、`npm run dev:client`、局域网地址、类型检查与构建、8 屏逐屏怎么到达、失败注入的语义、「改哪里」文件对照表、接真后端时要动的三处、常见问题、本轮验收对照。
+- **响应 PR #2 的隐私评审（luoyu-0，钉在 `client/design/README.md:24`）**：仓库里 `C:\Users\<用户名>\...` 形式的绝对路径**共 2 处已全部改成相对路径**——被点名的那处，以及我写 `Deploy.md` 时新引入的一处（同类错误，量出来才发现）。本仓库的 git 身份改成 `ALLA-7 <ALLA-7@users.noreply.github.com>`（只改 `--local`，不动 global）。**如实记一条没解决掉的**：已经推上去的那笔 `575db3a` 的 author 邮箱仍是 QQ 邮箱，它已经在公开仓库历史里；重写历史要 force-push 且**不等于撤回**（GitHub 的 events 和别人已 fetch 的副本都还在），所以这轮只做到"向前修"。要连旧提交一起改，需要单独授权。
+
 
 ## 接口与依赖
 
-- 字段名严格照 [接口约定](接口约定.md) 和 [游戏规则](游戏规则.md) 已冻结的部分使用：`title/description/options`、`text/effects/resultText`、`academics/social/energy/money`、`finalAttributes/grades`。
-- 未依赖任何真实接口、未读写 localStorage、未调用后端。
-- 非接口依赖：`client/design/assets/` 下 12 张 webp，合计 642 KB（两张主视觉 101 KB + 两侧远景 542 KB）。搬进 React 时按 Vite 静态资源导入（放 `client/src/assets/`，`import heroUrl from './assets/hero-campus.webp'`），不要放 `public/`，否则拿不到内容 hash 和构建期体积告警。两侧那十张建议用 `new URL('./assets/side-1-l.webp', import.meta.url)` 或动态 `import()` 拿到地址、跟当前主题一起渲染，等价于原型里的按需补 `src`；直接静态 import 十二张会把 542 KB 全打进首屏 chunk。
-- `PORT=3000` 取自 `.env.example`，原型未用到，留给 Vite 代理配置。
+- 字段名严格照 [接口约定](接口约定.md) 和 [游戏规则](游戏规则.md) 已冻结的部分使用：`title/description/options`、`text/effects/resultText`、`academics/social/energy/money`、`finalAttributes/grades`；React 这轮又按同一份文档用上了快照与响应的外层字段 —— `schemaVersion/rulesVersion/gameId/revision/phase/history/currentEvent/ending`、`requestId/baseRevision/snapshot`、`error{code,message,retryable}`。**没有自造过任何字段**，界面上多出来的日期与星期是前端按 `history.length` 推的（见待确认 12）。
+- **未调用后端、未发过任何真实网络请求**，但**已经在读写 localStorage**：临时件 `client/src/state/store.ts`，键名 `campusmock:snapshot`。成员 D 的 `src/storage/` 落地后整文件删掉，`useGame.ts` 里只有三处调用要换（`saveSnapshot` / `loadSnapshot` / `clearSnapshot`）。
+- 假数据是**模块内依赖，不是接口依赖**：`src/api/mockApi.ts` 导出 `generateEvent / chooseOption / generateEnding` 三个函数，签名是「进一份快照、出一份响应」。换成 `fetch('/api/...')` 时页面与状态机都不用动，`vite.config.ts` 的 `/api` 代理已经配好。
+- 非接口依赖：`client/design/assets/` 下 12 张 webp，合计 642 KB（两张主视觉 101 KB + 两侧远景 542 KB）。**素材刻意留在 `design/` 没搬进 `src/assets/`**：走查原型和产品代码引用同一批文件，避免两份素材各自漂移。构建时 Vite 照样能把它们发进 `dist/assets/` 并带上内容 hash。
+- 产物实测：JS 280 KB（gzip 89 KB）、CSS 11.7 KB、12 张 webp 642 KB。首屏只请求当前主题的 2 张侧景，88~130 KB。
+- `PORT=3000` 取自 `.env.example`，只用在 Vite 的 `/api` 代理目标上。
 
 ## 待协作事项
 
 **给成员 B：**
 
-1. `shared/` 目前只有一个 `.gitkeep`，没有 `package.json`。`Snapshot`/`GameEvent`/`Attributes` 类型放哪、怎么 import（workspace 依赖还是 TS path alias）请定一下。这条定不了，我这边就要先手写一份重复类型，联调时容易打架。
-2. mock 快照语义请复核：`revision` 每次转换递增、`history` 天数从 1 连续、`eventId` 全局不重复、`effects` 四项齐全（未影响写 0 不省略）、以 `history` 长度作为已完成天数而非另存 day 字段。原型按这份语义摆的数据，你的校验器可以直接拿这些当测试用例。
+1. `shared/` 目前只有一个 `.gitkeep`，没有 `package.json`。`Snapshot`/`GameEvent`/`Attributes` 类型放哪、怎么 import（workspace 依赖还是 TS path alias）请定一下。**这条我没等**：已经按接口约定写了一份临时的 `client/src/state/types.ts`（90 行，只有类型和 `isFailure`）。定下来之后我删掉它换成 import，对表时注意两点——`ending` 在 `phase !== 'ended'` 时是 `null` 还是缺字段、`history` 里要不要另存 `day` 字段（我现在按 `history.length` 推天数）。
+2. mock 快照语义请复核：`revision` 每次转换递增、`history` 天数从 1 连续、`eventId` 全局不重复、`effects` 四项齐全（未影响写 0 不省略）、以 `history` 长度作为已完成天数而非另存 day 字段。**这轮已经从"原型里按这份语义摆的数据"变成可执行代码**：`client/src/api/script.ts` 的 14 天脚本 + `advanceOneDay` 就是一份能跑的合法快照生成器，你的校验器和测试用例可以直接拿它当 fixture，不用另造数据。
 
 **给成员 D：**
 
-3. 接缝提案：快照由 D 持有，我的页面组件只接 props ——`snapshot` 加 `onChoose/onContinue/onGenerate/onRetry` 回调，组件内部不碰 localStorage、不比较 `revision`、不丢弃过期响应。确认的话我们就照这个并行做。
+3. 接缝提案：快照由 D 持有，我的页面组件只接 props ——`snapshot` 加 `onChoose/onContinue/onGenerate/onRetry` 回调，组件内部不碰 localStorage、不比较 `revision`、不丢弃过期响应。**这条已经照它实现了，可以直接接**：`useGame.ts` 里页面组件确实只吃 props，`revision` 比较、过期响应丢弃、重试重放、存档读写全在那一层。你接手只需要换三处调用（`saveSnapshot` / `loadSnapshot` / `clearSnapshot`），或者把你的 `src/storage/` 包成同名导出，我这边一行不改。另外定一下键名：我现在用的是 `campusmock:snapshot`，值就是接口约定里那份完整快照的 `JSON.stringify`，没有加版本号外壳——版本判断我放在结构校验里（读回来先看字段齐不齐，不齐就报「版本对不上」且**不清空**）。你要改成 `campusmock:v1:snapshot` 之类的请现在说，越晚改越要写迁移。
 
 **给成员 C：**
 
@@ -54,8 +68,13 @@
 7. 金钱变化为 0 时我写的是「没变」而不是「0」，避免像表格。可改。
 8. **桌面端主视觉已放大（2026-09-10）**：实测是在电脑上浏览，原来 330px 上限的插画在 2000px 宽的屏上只占 16%，观感太小。现在 ≥768px 时开始页插画对称溢出到 660×400、结局横幅加高到 488×240、标题 40px；窄栏刻意保持 560px 不加宽，否则 350 字的事件卡会拉成一行四十多字的长句。剩余待决：要不要进一步做 ≥1024px 的左图右文双栏海报版式（视觉冲击更强，但等于多一套桌面版式）。
 9. 窄屏优先的前提要修正：验收项要求「至少一台局域网设备完成事件生成与结算」，但实际演示是在电脑上看的。所以现在是**手机和桌面两端都要成立**，桌面不再是"能看就行"。
-10. **AI 角标：这次我先动了，需要你们追认或退回。** 十张两侧水彩在抠图时把右下角的「Qoder AI 生成」角标一并去掉了——它在 .45 透明度的装饰图上仍能看出是一行灰字，而且和「画面里不出文字」的生成约束冲突。开始页与结局页那两张**角标原样保留**。要恢复成带角标的版本，把 `vibe_images/key_side.py` 里 `KEEP_WATERMARK` 改成 `True` 重跑十张即可，几分钟的事。保留（当作 AI 内容声明）／全部裁掉／换无角标生成，请定一个。
+10. **AI 角标：这次我先动了，需要你们追认或退回。** 十张两侧水彩在抠图时把右下角的「Qoder AI 生成」角标一并去掉了——它在 .45 透明度的装饰图上仍能看出是一行灰字，而且和「画面里不出文字」的生成约束冲突。开始页与结局页那两张**角标原样保留**。要恢复成带角标的版本，把 `vibe_images/key_side.py`（**在仓库外、未入库**，我本地素材管线目录）里 `KEEP_WATERMARK` 改成 `True` 重跑十张即可，几分钟的事。保留（当作 AI 内容声明）／全部裁掉／换无角标生成，请定一个。
 11. 更前置的一条：**比赛是否允许 AI 生成的美术素材进产品代码**。如果不允许，我把这 12 张全部退回内联 SVG 版本（两侧那五套矢量兜底这轮已经画完并复核过，改动量很小，只是观感退回简版）；这条我判断不了，需要看赛题要求。
+12. **顶栏的日期与星期是前端推的，接口里没有这两个字段。** 我按「第 1 天 = 9 月 1 日 = 星期六」算（`src/state/calendar.ts`），依据是原型里已确认的「第 5 天 · 星期三」「第 14 天 · 星期五」两点都能对上，也符合 9 月开学。要么团队认下这个起点，要么成员 B 在快照里给一个 `startDate`。顺带一条：原型第 1 天标题旁的「有风」是天气，契约里没有天气字段，**我没有搬过来**，要保留就得加字段。
+13. **侧景主题已改成确定值，不需要你们拍板了，只报一下**（2026-09-10 晚）。之前文档里写的是「React 里换成按天取模 `day % 5 + 1`」，而我第一版实现保留了原型的随机换——两条各有毛病：取模会让同一天里的 ①→②→③ 三次换屏背景一动不动（观感退回"没有换场"），随机则让截图无法回溯。现在按 **`(天数 + 屏序号) % 5`** 取，两条同时成立：同一个状态永远同一套图（截图可复现、可写进验收记录），换屏一定换图。实现是 `useGame.ts` 里的纯函数 `sceneFor(day, screen)`，`scene` 不再是 state、也没有那个换屏 effect 了。要退回纯按天，改这一个函数。
+14. **不可重试错误屏的「查看运行说明」按钮现在是 `disabled`**，不是漏做：仓库根的 `Deploy.md` 已经有了，但打包后的前端没有任何地址能指向它。要定的是「跳仓库文档（局域网设备上依赖外网和仓库权限）」还是「做一屏内置说明」。
+15. **根目录 `npm run build` 现在必然失败**（给成员 B / D）：`server/package.json` 的 `build` 是 `tsc -p tsconfig.json`，但 `server/tsconfig.json` 不存在，而且 `server` 没声明 `express` / `tsx` / `typescript` 任何依赖。`npm run build -w client` 是通的。不修这条，第 5 天的"一键构建 + 运行说明"会卡在 server 上。
+16. **走查条演示时要不要留着？** 它不属于产品界面（顶部那条灰栏），但演示时用它跳到第 5 天比真跑 15 秒快得多。默认我留着，正式上线前删 `App.tsx` 里那一行。如果评委要的是"干净的产品界面"，我就改成只在 `import.meta.env.DEV` 下渲染。
 
 ## 验证记录
 
@@ -78,4 +97,14 @@
 - 只有量尺寸才发现的缺陷：纸页是 `<span>`，原本靠 `position:absolute` 才自动变成块级；为了把视差和漂移分到两层而改成 `position:static` 后，它退回内联元素，而 `aspect-ratio` 对非替换内联元素无效，高度直接塌成 0 —— 补 `display:block` 解决。教训：给 `<span>` 换定位方式时要顺手确认它还是不是块级。
 - 探针自身踩的坑记两条，避免下次误判：① 算居中偏移要减 `innerWidth/2` 而不是 `innerWidth`；② 判"装饰是否压到正文"要分左右两组分别比，把两侧元素混进同一个 `Math.max` 会得出恒定 true 的假阳性。
 - 已人眼确认：开始页与结局页截图各一张，插画与页面冷色背景、暖色落日光晕协调，落叶与推近动效在位。
-- 仍存在的问题：深色模式、超长 AI 文案（>800 字）、精力或金钱为负时的 HUD 表现都还没测；动效只确认了在跑，没测过低端机局域网设备上的帧率。
+- 验证方式（React 这轮）：`npm run typecheck -w client` 干净；`npm run build -w client` 通过（JS 280.46 KB / gzip 89.11 KB、CSS 11.74 KB、12 张 webp 全带内容 hash 进产物）；dev server 起在 5173 并打印局域网地址（`host: true`）。
+- 结果（8 屏逐屏）：②③⑤ 与 errRetry 逐屏截图核对，与原型一致；本轮补齐 ① 与 errFatal —— ① 停在「台灯已经打开了，日记还在路上……」的骨架 + 转圈，errFatal 出「这本日记我读不懂」+ 禁用的「查看运行说明」+ 刻意不给「重新开始」。
+- 结果（数值链路，最重要的一条）：假 API 的 14 天走位是**从原型上画好的数字反推**出来的，逐屏对上了：第 5 天顶栏 精力 5 / 金钱 940 → 选完 精力 `−2` / 金钱「没变」→ 终局 `{学业 15, 社交 −2, 精力 −2, 金钱 740}` = **A/D/D/B**，和结局文案里「学业的 A 不是天赋…精力和社交同时落到 D」那句一致。这条同时把阈值表、「允许负数不钳制」、「0 变化显示没变」三条规则跑通在同一个用例上。
+- 结果（存档恢复）：跑完 14 天后刷新，走查条显示 `14/14 · 精力 -2 · 金钱 740 · rev 15` 的存档被读回（走查条是开发读数，用的是 ASCII 连字符；界面上的数值才走 U+2212 的 `formatValue`），开始页出现「继续上次的日记」；点「清掉本机存档」后回到 `start`、`localStorage.getItem('campusmock:snapshot')` 为 `null`。
+- 结果（桌面 1440）：headless Edge 出图核对开始页 —— 主视觉 660×400 在位、两侧水彩各落在左右留白、云与漂浮纸页在位、560px 正文栏没被压。
+- 结果（选择前不泄露）：① 屏可见文字断言 `学业`/`社交` 为 false、无带符号数字。React 侧另外按挂载位置复核了同一条规则：带符号数字只可能出自 `ResultCard` 里的 `DeltaRow`，档位字样只出自只挂在结局页的 `Grades`。
+- **修掉的三个移植期缺陷**：① `Photo` 的守卫写成「非 loading 就不渲染」，结果**位图加载成功反而被卸载**、只剩矢量兜底（网络面板里 webp 是 200，页面上却是平的），改成只在 `missing` 时不渲染；② `mockApi` 的 `ok()` 把 `baseRevision` 取成了**已经推进之后**的那份快照，于是每一次转换都被客户端判成过期响应（症状：点两下就报「这一步的响应回来晚了，我没有采纳它」），改成 `ok(base, next)`，六个调用点一起修；③ 移植后 `.screen{display:none}` / `.screen.on{animation:fade .3s}` 成了死 CSS，**换屏 0.3s 淡入丢了**，给页面切换加一个 `key={screen}` 的 `.screen on` 包装复用原规则，实测 computed `animationName: fade`、`animationDuration: 0.3s`。
+- 记一条写法坑：`actions` 里 `restart() { this.start() }` 在页面组件把方法解构出来时 `this` 是 undefined。改成把 `startGame` 提成 `useCallback`，`start` 和 `restart` 指向同一个引用。
+- 一个刻意的选择，别当 bug 报：注入的「不可重试」失败**复用了真实 code `SNAPSHOT_VERSION_UNSUPPORTED` 和它的文案**，而不是编一个 `MOCK_FATAL`。这样评审看到的错误屏，和玩家真遇到存档版本不兼容时看到的是同一屏。
+- 环境坑两条：① 浏览器面板视口窄于 900px 时两侧远景整组 `display:none`，**桌面观感只能靠 headless Edge 出图核对**，别拿面板截图当桌面结论；② 改 `App.tsx` 触发 HMR 时，`mockApi` 模块级的 `fault` 变量不会重置而走查条 state 可能被保留，两边会漂移——失败注入"看起来不生效"时先点一次「不注入失败」。
+- 仍存在的问题：深色模式没做（不在本轮范围）；超长 AI 文案（>800 字）没测，现在也没有真文案可测，等成员 C；**顶栏 HUD 出现负精力/负金钱的场景还没实测**——假脚本的终局精力是 −2，但那时已经在结局屏，格式化路径与结果卡的负号共用 `formatValue`，结果卡上的 `−2` 已核对过；动效只确认在跑，低端局域网设备上的帧率没测。
