@@ -34,7 +34,7 @@
 - **12 张插画按 Vite 静态资源导入**：`src/sceneArt.ts` 里十行字面量 `new URL('../design/assets/side-N-l.webp', import.meta.url).href`，等价于原型里的按需补 `src`（未选中的主题根本不请求）。**路径必须是字面量**，写成变量 Vite 就静态分析不到、不会把文件发进产物。没有放 `public/`，所以拿得到内容 hash。
 - **临时存档 `client/src/state/store.ts`**：键名 `campusmock:snapshot`，读回来先做结构校验，**校验不过时不清空、不改写**，只提示版本对不上（对应「不静默清空存档」那条要求）。文件头写明是给成员 D 的 `src/storage/` 落地后整文件删除的临时件。
 - **`Deploy.md`（仓库根）**：安装、`npm run dev:client`、局域网地址、类型检查与构建、8 屏逐屏怎么到达、失败注入的语义、「改哪里」文件对照表、接真后端时要动的三处、常见问题、本轮验收对照。
-- **响应 PR #2 的隐私评审（luoyu-0，钉在 `client/design/README.md:24`）**：仓库里 `C:\Users\<用户名>\...` 形式的绝对路径**共 2 处已全部改成相对路径**——被点名的那处，以及我写 `Deploy.md` 时新引入的一处（同类错误，量出来才发现）。本仓库的 git 身份改成 `ALLA-7 <ALLA-7@users.noreply.github.com>`（只改 `--local`，不动 global）。**如实记一条没解决掉的**：已经推上去的那笔 `575db3a` 的 author 邮箱仍是 QQ 邮箱，它已经在公开仓库历史里；重写历史要 force-push 且**不等于撤回**（GitHub 的 events 和别人已 fetch 的副本都还在），所以这轮只做到"向前修"。要连旧提交一起改，需要单独授权。
+- **响应 PR #2 的隐私评审（luoyu-0，钉在 `client/design/README.md:24`）**：仓库里含本机用户名的 Windows 绝对路径**共 2 处已全部改成相对路径**——被点名的那处，以及我写 `Deploy.md` 时新引入的一处（同类错误，量出来才发现）。本仓库的 git 身份改成 `ALLA-7 <ALLA-7@users.noreply.github.com>`（只改 `--local`，不动 global）。**如实记一条没解决掉的**：已经推上去的那笔 `575db3a` 的 author 邮箱仍是 QQ 邮箱，它已经在公开仓库历史里；重写历史要 force-push 且**不等于撤回**（GitHub 的 events 和别人已 fetch 的副本都还在），所以这轮只做到"向前修"。要连旧提交一起改，需要单独授权。
 
 
 ## 接口与依赖
