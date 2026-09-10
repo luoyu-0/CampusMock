@@ -12,10 +12,10 @@ import type {
   AttributeKey,
   Attributes,
   Effects,
-  GameEvent,
-  Snapshot,
+  EventData,
+  GameSnapshot,
   Grade,
-  HistoryEntry,
+  HistoryRecord,
   Phase,
 } from './types';
 
@@ -47,7 +47,7 @@ function isEffects(value: unknown): value is Effects {
   });
 }
 
-function isEvent(value: unknown): value is GameEvent {
+function isEvent(value: unknown): value is EventData {
   if (!isRecord(value) || !isText(value.id) || !Number.isInteger(value.day)) return false;
   if (!isText(value.title) || !isText(value.description) || !Array.isArray(value.options) || value.options.length < 2) return false;
   const ids = new Set<string>();
@@ -58,7 +58,7 @@ function isEvent(value: unknown): value is GameEvent {
   });
 }
 
-function isHistoryEntry(value: unknown, day: number): value is HistoryEntry {
+function isHistoryRecord(value: unknown, day: number): value is HistoryRecord {
   return (
     isRecord(value) &&
     value.day === day &&
@@ -71,7 +71,7 @@ function isHistoryEntry(value: unknown, day: number): value is HistoryEntry {
   );
 }
 
-function eventMatchesRecord(event: GameEvent, record: HistoryEntry): boolean {
+function eventMatchesRecord(event: EventData, record: HistoryRecord): boolean {
   const selected = event.options.find((option) => option.id === record.optionId);
   return (
     event.id === record.eventId &&
@@ -95,7 +95,7 @@ function isEnding(value: unknown, attributes: Attributes): boolean {
   );
 }
 
-export function createInitialSnapshot(): Snapshot {
+export function createInitialSnapshot(): GameSnapshot {
   return {
     schemaVersion: SCHEMA_VERSION,
     rulesVersion: RULES_VERSION,
@@ -118,11 +118,11 @@ export function applyEffects(current: Attributes, effects: Effects): Attributes 
   };
 }
 
-export function isGameCompleted(snapshot: Snapshot): boolean {
+export function isGameCompleted(snapshot: GameSnapshot): boolean {
   return snapshot.history.length === TOTAL_DAYS;
 }
 
-export function getCurrentDay(snapshot: Snapshot): number {
+export function getCurrentDay(snapshot: GameSnapshot): number {
   return snapshot.history.length + 1;
 }
 
@@ -151,7 +151,7 @@ export function validateSnapshot(value: unknown): { isValid: boolean; reason?: s
   const history = value.history;
   const eventIds = new Set<string>();
   if (!history.every((record, index) => {
-    if (!isHistoryEntry(record, index + 1) || eventIds.has(record.eventId)) return false;
+    if (!isHistoryRecord(record, index + 1) || eventIds.has(record.eventId)) return false;
     eventIds.add(record.eventId);
     return true;
   })) {
@@ -165,7 +165,7 @@ export function validateSnapshot(value: unknown): { isValid: boolean; reason?: s
   if (value.currentEvent !== null && !isEvent(value.currentEvent)) return { isValid: false, reason: '当前事件结构不合法' };
   if (value.ending !== null && !isEnding(value.ending, value.attributes)) return { isValid: false, reason: '结局结构不合法' };
 
-  const snapshot = value as unknown as Snapshot;
+  const snapshot = value as unknown as GameSnapshot;
   const completed = snapshot.history.length;
   const latest = snapshot.history[snapshot.history.length - 1];
   if (snapshot.phase === 'pendingEvent' && !(completed < TOTAL_DAYS && snapshot.currentEvent === null && snapshot.ending === null)) {
@@ -208,7 +208,7 @@ export function validateSnapshot(value: unknown): { isValid: boolean; reason?: s
   return { isValid: true };
 }
 
-export function incrementRevision(snapshot: Snapshot): Snapshot {
+export function incrementRevision(snapshot: GameSnapshot): GameSnapshot {
   return { ...snapshot, revision: snapshot.revision + 1 };
 }
 
