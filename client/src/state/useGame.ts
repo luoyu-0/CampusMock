@@ -1,13 +1,9 @@
-/* 一局的状态机。页面组件只接 props 和回调，不碰 localStorage、不比较 revision、不丢过期响应，
-   这些全在这一层（docs/成员-A-前端.md 待协作事项 3 里提给成员 D 的接缝）。
-   调用一律「发完整快照、收完整快照」，所以刷新和重试都不会二次累加。 */
-
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { chooseOption, generateEnding, generateEvent } from '../api/gameApi'
+import { DAY_SCRIPT, TOTAL_DAYS, initialSnapshot } from '../api/script'
+import { clearSnapshot, isSnapshot, loadSnapshot, saveSnapshot, STORAGE_KEY } from '../storage'
 import type { ApiError, ApiResult, GameEvent, Snapshot } from './types'
 import { isFailure } from './types'
-import { TOTAL_DAYS, initialSnapshot } from '../api/script'
-import { chooseOption, generateEnding, generateEvent } from '../api/mockApi'
-import { clearSnapshot, loadSnapshot, saveSnapshot } from './store'
 
 export type ScreenKey =
   | 'start'
@@ -19,9 +15,35 @@ export type ScreenKey =
   | 'errRetry'
   | 'errFatal'
 
+type ApiCall = (snapshot: Snapshot, requestId: string) => Promise<unknown>
+type ResumeAfterSave = 'none' | 'generateEvent' | 'generateEnding'
+
+interface PendingSave {
+  snapshot: Snapshot
+  resume: ResumeAfterSave
+}
+
 const UNSUPPORTED: ApiError = {
   code: 'SNAPSHOT_VERSION_UNSUPPORTED',
-  message: '存档的版本和当前规则对不上。我没有改动它，也没有清空它——你之前的记录还在原处。',
+  message: '存档的版本和当前规则对不上。原始存档仍保留在这台设备上。',
+  retryable: false,
+}
+
+const INVALID_SAVE: ApiError = {
+  code: 'SNAPSHOT_INVALID',
+  message: '这份存档内容不完整或已经损坏。原始存档没有被覆盖。',
+  retryable: false,
+}
+
+const STORAGE_UNAVAILABLE: ApiError = {
+  code: 'STORAGE_UNAVAILABLE',
+  message: '浏览器目前无法读取或修改本机存档，请检查隐私设置和存储权限。',
+  retryable: false,
+}
+
+const EXTERNAL_CHANGE: ApiError = {
+  code: 'SAVE_CHANGED_IN_ANOTHER_TAB',
+  message: '另一个标签页已经更新了这局日记。请重新载入，以免覆盖较新的进度。',
   retryable: false,
 }
 
@@ -40,48 +62,123 @@ function screenOfPhase(snapshot: Snapshot): ScreenKey {
   }
 }
 
-/** 侧景主题：同时满足「可复现」和「每次换屏都看得见变化」两条。
- *  纯取模 `day % 5` 会让同一天里的 ①→②→③ 三次换屏背景一动不动；纯随机则截图无法回溯。
- *  按 (天数 + 屏序号) 取模是确定的，所以同一个状态永远同一套图，而换屏一定换图。 */
 const SCREEN_ORDER: ScreenKey[] = ['start', 'generating', 'choice', 'result', 'endingPending', 'ending', 'errRetry', 'errFatal']
 
 function sceneFor(day: number, screen: ScreenKey): number {
   return (((day - 1 + SCREEN_ORDER.indexOf(screen)) % 5) + 5) % 5 + 1
 }
 
+function createRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function isApiResult(value: unknown): value is ApiResult {
+  if (!value || typeof value !== 'object') return false
+  const response = value as Record<string, unknown>
+  if (typeof response.requestId !== 'string') return false
+  if ('error' in response) {
+    const error = response.error
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      typeof (error as Record<string, unknown>).code === 'string' &&
+      typeof (error as Record<string, unknown>).message === 'string' &&
+      typeof (error as Record<string, unknown>).retryable === 'boolean'
+    )
+  }
+  return Number.isSafeInteger(response.baseRevision) && 'snapshot' in response
+}
+
 export function useGame() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [busy, setBusy] = useState(false)
-  /* 读到存档也先停在开始页，让「继续上次的日记」这个入口出现（原型注明两个按钮同一时刻只出现一个） */
   const [entered, setEntered] = useState(false)
-  const lastCall = useRef<{ base: Snapshot; call: (s: Snapshot) => Promise<ApiResult> } | null>(null)
-  /* 存档写不进去（配额满、浏览器拦写入）时不能继续装作存上了 —— 验收项「不假装保存成功」。
-     只记一个布尔，不切屏不挡操作：这一局还能继续玩，提示条会说明刷新会退回上一次成功保存的位置。 */
-  const [saveFailed, setSaveFailed] = useState(false)
-  const persist = useCallback((next: Snapshot) => {
-    setSaveFailed(!saveSnapshot(next))
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null)
+  const [recoveryRaw, setRecoveryRaw] = useState<string | null>(null)
+
+  const currentSnapshot = useRef<Snapshot | null>(null)
+  const requestGeneration = useRef(0)
+  const lastCall = useRef<{ base: Snapshot; call: ApiCall } | null>(null)
+
+  const applySnapshot = useCallback((next: Snapshot | null) => {
+    currentSnapshot.current = next
+    setSnapshot(next)
   }, [])
 
-  const dispatch = useCallback(async (base: Snapshot, call: (s: Snapshot) => Promise<ApiResult>) => {
-    lastCall.current = { base, call }
-    setBusy(true)
-    setError(null)
-    const result = await call(base)
-    setBusy(false)
-    if (isFailure(result)) {
-      setError(result.error)
-      return
-    }
-    // 只接纳 baseRevision 还跟得上的响应，慢回来的旧快照直接丢掉
-    if (result.baseRevision !== base.revision) {
-      setError({ code: 'REVISION_CONFLICT', message: '这一步的响应回来晚了，我没有采纳它。', retryable: true })
-      return
-    }
+  const invalidateRequests = useCallback(() => {
+    requestGeneration.current += 1
     lastCall.current = null
-    setSnapshot(result.snapshot)
-    persist(result.snapshot)
-  }, [persist])
+    setBusy(false)
+  }, [])
+
+  const persistAndApply = useCallback(
+    (next: Snapshot, resume: ResumeAfterSave = 'none'): boolean => {
+      if (!saveSnapshot(next)) {
+        setPendingSave({ snapshot: next, resume })
+        return false
+      }
+      setPendingSave(null)
+      applySnapshot(next)
+      return true
+    },
+    [applySnapshot],
+  )
+
+  const dispatch = useCallback(
+    async (base: Snapshot, call: ApiCall): Promise<Snapshot | null> => {
+      const token = ++requestGeneration.current
+      const requestId = createRequestId()
+      lastCall.current = { base, call }
+      setBusy(true)
+      setError(null)
+
+      let result: unknown
+      try {
+        result = await call(base, requestId)
+      } catch {
+        if (token !== requestGeneration.current) return null
+        setBusy(false)
+        setError({ code: 'NETWORK_ERROR', message: '暂时联系不上服务，当前进度没有改变。', retryable: true })
+        return null
+      }
+
+      if (token !== requestGeneration.current) return null
+      setBusy(false)
+      if (!isApiResult(result)) {
+        setError({ code: 'INVALID_RESPONSE', message: '服务返回的数据格式不完整，我没有写入存档。', retryable: true })
+        return null
+      }
+      if (result.requestId !== requestId) {
+        setError({ code: 'REQUEST_MISMATCH', message: '收到了一份不属于当前操作的响应，我没有采纳它。', retryable: true })
+        return null
+      }
+      if (isFailure(result)) {
+        setError(result.error)
+        return null
+      }
+
+      const current = currentSnapshot.current
+      const responseMatchesBase =
+        result.baseRevision === base.revision &&
+        result.snapshot.gameId === base.gameId &&
+        current?.gameId === base.gameId &&
+        current.revision === base.revision
+      if (!responseMatchesBase) {
+        setError({ code: 'REVISION_CONFLICT', message: '这一步的响应回来晚了，我没有采纳它。', retryable: true })
+        return null
+      }
+      if (!isSnapshot(result.snapshot)) {
+        setError({ code: 'INVALID_RESPONSE', message: '服务返回的数据不完整，我没有写入存档。', retryable: true })
+        return null
+      }
+
+      lastCall.current = null
+      return persistAndApply(result.snapshot) ? result.snapshot : null
+    },
+    [persistAndApply],
+  )
 
   const stepFrom = useCallback(
     (base: Snapshot) => {
@@ -91,15 +188,35 @@ export function useGame() {
     [dispatch],
   )
 
-  /* 挂载时恢复存档：只把快照读回来，要不要继续由玩家在开始页决定。 */
   useEffect(() => {
     const loaded = loadSnapshot()
-    if (loaded.kind === 'unsupported') {
-      setError(UNSUPPORTED)
+    if (loaded.kind === 'ok') {
+      applySnapshot(loaded.snapshot)
       return
     }
-    if (loaded.kind === 'ok') setSnapshot(loaded.snapshot)
-  }, [])
+    if (loaded.kind === 'unsupported') {
+      setRecoveryRaw(loaded.raw)
+      setError(UNSUPPORTED)
+    } else if (loaded.kind === 'invalid') {
+      setRecoveryRaw(loaded.raw)
+      setError(INVALID_SAVE)
+    } else if (loaded.kind === 'unavailable') {
+      setError(STORAGE_UNAVAILABLE)
+    }
+  }, [applySnapshot])
+
+  useEffect(() => {
+    const handleExternalSave = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || event.storageArea !== localStorage) return
+      invalidateRequests()
+      setPendingSave(null)
+      setRecoveryRaw(event.newValue)
+      setError(EXTERNAL_CHANGE)
+      setEntered(true)
+    }
+    window.addEventListener('storage', handleExternalSave)
+    return () => window.removeEventListener('storage', handleExternalSave)
+  }, [invalidateRequests])
 
   const screen: ScreenKey = error
     ? error.retryable
@@ -109,69 +226,135 @@ export function useGame() {
       ? 'start'
       : screenOfPhase(snapshot)
 
-  /* 正在写的这一天 = 已完成天数 + 1；结局屏停在最后一天 */
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
   const scene = sceneFor(day, screen)
+  const storageBlocked = pendingSave !== null
 
-  /* 开始页「开始第一天」与结局页「重新开始两周」是同一件事：先清掉旧档再开新局 */
   const startGame = useCallback(() => {
-    clearSnapshot()
+    invalidateRequests()
+    setError(null)
+    setRecoveryRaw(null)
     setEntered(true)
     const fresh = initialSnapshot()
-    setSnapshot(fresh)
-    persist(fresh)
-    void dispatch(fresh, generateEvent)
-  }, [dispatch, persist])
+    if (persistAndApply(fresh, 'generateEvent')) void dispatch(fresh, generateEvent)
+  }, [dispatch, invalidateRequests, persistAndApply])
 
   const actions = {
     start: startGame,
-    /** 开始页「继续上次的日记」：停在待生成事件/待生成结局时，把那一半补上 */
     resume() {
-      if (!snapshot || busy) return
+      if (!snapshot || busy || storageBlocked) return
       setEntered(true)
       stepFrom(snapshot)
     },
     choose(event: GameEvent, optionId: string) {
-      if (!snapshot || busy) return
-      void dispatch(snapshot, base => chooseOption(base, event.id, optionId))
+      if (!snapshot || busy || storageBlocked) return
+      void dispatch(snapshot, (base, requestId) => chooseOption(base, event.id, optionId, requestId))
     },
-    /** 展示结果后的「继续」：第 14 天之后是生成结局，不是新事件 */
     continueDay() {
-      if (!snapshot || busy) return
-      const base = snapshot
-      if (base.history.length >= TOTAL_DAYS) void dispatch(base, generateEnding)
-      else void dispatch(base, generateEvent)
+      if (!snapshot || busy || storageBlocked) return
+      if (snapshot.history.length >= TOTAL_DAYS) void dispatch(snapshot, generateEnding)
+      else void dispatch(snapshot, generateEvent)
     },
     retry() {
       const pending = lastCall.current
-      if (!pending || busy) return
+      if (!pending || busy || storageBlocked) return
       void dispatch(pending.base, pending.call)
     },
-    /** 错误屏的「先回到上一页」：只收起提示，快照没动过 */
+    retrySave() {
+      const pending = pendingSave
+      if (!pending || busy || !saveSnapshot(pending.snapshot)) return
+      setPendingSave(null)
+      applySnapshot(pending.snapshot)
+      if (pending.resume === 'generateEvent') void dispatch(pending.snapshot, generateEvent)
+      else if (pending.resume === 'generateEnding') void dispatch(pending.snapshot, generateEnding)
+    },
     dismissError() {
       lastCall.current = null
       setError(null)
     },
     restart: startGame,
-    /** 走查面板直接塞一份快照进来，等价于成员 D 恢复出的某个中间状态。
-     *  hold=true 时不补接口，让①④这两个中间态停在屏上供评审。 */
-    loadAt(next: Snapshot, hold: boolean) {
-      clearSnapshot()
+    runFullWalk() {
+      invalidateRequests()
       setError(null)
+      setRecoveryRaw(null)
       setEntered(true)
-      setSnapshot(next)
-      persist(next)
-      if (!hold) stepFrom(next)
+      const fresh = initialSnapshot()
+      if (!persistAndApply(fresh)) return
+
+      void (async () => {
+        let current = fresh
+        for (const draft of DAY_SCRIPT) {
+          const generated = await dispatch(current, generateEvent)
+          if (!generated?.currentEvent) return
+          const option = generated.currentEvent.options[draft.walk]
+          const settled = await dispatch(generated, (base, requestId) =>
+            chooseOption(base, generated.currentEvent!.id, option.id, requestId),
+          )
+          if (!settled) return
+          current = settled
+        }
+        await dispatch(current, generateEnding)
+      })()
+    },
+    loadAt(next: Snapshot, hold: boolean) {
+      invalidateRequests()
+      setError(null)
+      setRecoveryRaw(null)
+      setEntered(true)
+      const resume: ResumeAfterSave = hold ? 'none' : next.phase === 'pendingEnding' ? 'generateEnding' : 'generateEvent'
+      if (persistAndApply(next, resume) && !hold) stepFrom(next)
     },
     forgetSave() {
-      clearSnapshot()
+      invalidateRequests()
+      if (!clearSnapshot()) {
+        setError(STORAGE_UNAVAILABLE)
+        return
+      }
+      setPendingSave(null)
+      setRecoveryRaw(null)
       setError(null)
       setEntered(false)
-      setSnapshot(null)
+      applySnapshot(null)
+    },
+    reloadLatest() {
+      window.location.reload()
+    },
+    exportBrokenSave() {
+      if (recoveryRaw === null) return
+      const blob = new Blob([recoveryRaw], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `campusmock-save-backup-${new Date().toISOString().slice(0, 10)}.json`
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    },
+    clearBrokenSave() {
+      const confirmed = window.confirm('确定已经备份并清除这份无法读取的存档吗？此操作无法撤销。')
+      if (!confirmed) return
+      invalidateRequests()
+      if (!clearSnapshot()) {
+        setError(STORAGE_UNAVAILABLE)
+        return
+      }
+      setPendingSave(null)
+      setRecoveryRaw(null)
+      setError(null)
+      setEntered(false)
+      applySnapshot(null)
     },
   }
 
-  return { screen, snapshot, busy, error, scene, saveFailed, actions }
+  return {
+    screen,
+    snapshot,
+    busy,
+    error,
+    scene,
+    saveFailed: storageBlocked,
+    canExportBrokenSave: recoveryRaw !== null,
+    actions,
+  }
 }
 
 export type GameActions = ReturnType<typeof useGame>['actions']

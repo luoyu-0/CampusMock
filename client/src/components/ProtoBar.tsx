@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PRESETS, presetSnapshot, presetSummary } from '../api/presets'
 import type { PresetId } from '../api/presets'
-import { setFault } from '../api/mockApi'
+import { API_MODE, setFault, SUPPORTS_FAULT_INJECTION } from '../api/gameApi'
 import type { FaultKind } from '../api/mockApi'
 import type { Snapshot } from '../state/types'
 import type { ScreenKey } from '../state/useGame'
@@ -17,15 +17,19 @@ const FAULTS: { id: FaultKind; label: string }[] = [
 export function ProtoBar({
   screen,
   snapshot,
+  busy,
   showNotes,
   onNotes,
+  onRunFull,
   onLoad,
   onForget,
 }: {
   screen: ScreenKey
   snapshot: Snapshot | null
+  busy: boolean
   showNotes: boolean
   onNotes: (next: boolean) => void
+  onRunFull: () => void
   onLoad: (next: Snapshot, hold: boolean) => void
   onForget: () => void
 }) {
@@ -43,16 +47,19 @@ export function ProtoBar({
       {PRESETS.map(preset => (
         <button
           key={preset.id}
+          disabled={busy}
           className={active === preset.id ? 'on' : undefined}
           onClick={() => {
             setActive(preset.id)
-            onLoad(presetSnapshot(preset.id), preset.hold)
+            if (preset.id === 'fresh') onRunFull()
+            else onLoad(presetSnapshot(preset.id), preset.hold)
           }}
         >
           {preset.label}
         </button>
       ))}
       <button
+        disabled={busy}
         onClick={() => {
           setActive(null)
           onForget()
@@ -65,6 +72,7 @@ export function ProtoBar({
       {FAULTS.map(item => (
         <button
           key={item.id}
+          disabled={busy || !SUPPORTS_FAULT_INJECTION}
           className={fault === item.id ? 'on' : undefined}
           onClick={() => pickFault(item.id)}
         >
@@ -73,12 +81,12 @@ export function ProtoBar({
       ))}
 
       <span className="label">
-        {screen}
+        {API_MODE} · {screen}
         {snapshot ? ` · ${presetSummary(snapshot)} · rev ${snapshot.revision}` : ''}
       </span>
 
       <label className="notes-toggle">
-        <input type="checkbox" checked={showNotes} onChange={event => onNotes(event.target.checked)} />
+        <input type="checkbox" checked={showNotes} disabled={busy} onChange={event => onNotes(event.target.checked)} />
         设计标注
       </label>
     </div>

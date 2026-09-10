@@ -14,8 +14,8 @@ export const INITIAL_ATTRIBUTES: Attributes = {
 
 export const TOTAL_DAYS = 14;
 
-export const SCHEMA_VERSION = '1.0';
-export const RULES_VERSION = '1.0';
+export const SCHEMA_VERSION = 1;
+export const RULES_VERSION = 1;
 
 // ---------- 分档阈值 ----------
 export const GRADE_THRESHOLDS = {

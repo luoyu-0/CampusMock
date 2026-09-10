@@ -8,9 +8,10 @@ import { StartPage } from './pages/StartPage'
 import { useGame } from './state/useGame'
 
 const GAME_SCREENS = ['generating', 'choice', 'result', 'endingPending']
+const SHOW_PROTO_BAR = import.meta.env.DEV || import.meta.env.VITE_ENABLE_PROTO_BAR === 'true'
 
 export default function App() {
-  const { screen, snapshot, busy, error, scene, saveFailed, actions } = useGame()
+  const { screen, snapshot, busy, error, scene, saveFailed, canExportBrokenSave, actions } = useGame()
   const [showNotes, setShowNotes] = useState(false)
 
   useEffect(() => {
@@ -22,23 +23,31 @@ export default function App() {
   }, [screen])
 
   const inGame = snapshot !== null && GAME_SCREENS.includes(screen)
+  const interactionBlocked = busy || saveFailed
 
   return (
     <>
-      <ProtoBar
-        screen={screen}
-        snapshot={snapshot}
-        showNotes={showNotes}
-        onNotes={setShowNotes}
-        onLoad={(next, hold) => actions.loadAt(next, hold)}
-        onForget={() => actions.forgetSave()}
-      />
+      {SHOW_PROTO_BAR && (
+        <ProtoBar
+          screen={screen}
+          snapshot={snapshot}
+          busy={interactionBlocked}
+          showNotes={showNotes}
+          onNotes={setShowNotes}
+          onRunFull={() => actions.runFullWalk()}
+          onLoad={(next, hold) => actions.loadAt(next, hold)}
+          onForget={() => actions.forgetSave()}
+        />
+      )}
       <SceneBackdrop theme={scene} />
       <main className="stage">
         {saveFailed && (
-          <p className="save-warn" role="status">
-            这台设备现在写不进存档（浏览器拦了写入，或者空间满了）。这一局还能继续玩，但刷新会退回上一次成功保存的地方。
-          </p>
+          <div className="save-warn" role="alert">
+            <span>这一步已经完成，但浏览器暂时写不进存档。进度尚未推进，重试保存不会再次生成内容。</span>
+            <button className="btn muted" disabled={busy} onClick={actions.retrySave}>
+              重试保存
+            </button>
+          </div>
         )}
         {/* key={screen} 让每次换屏重挂载一次，global.css 里 .screen.on 的 0.3s 淡入因此仍然成立 */}
         <div className="screen on" key={screen}>
@@ -50,10 +59,16 @@ export default function App() {
               onResume={() => actions.resume()}
             />
           )}
-          {inGame && snapshot && <GamePage snapshot={snapshot} busy={busy} actions={actions} />}
+          {inGame && snapshot && <GamePage snapshot={snapshot} busy={interactionBlocked} actions={actions} />}
           {screen === 'ending' && snapshot && <EndingPage snapshot={snapshot} onRestart={() => actions.restart()} />}
           {(screen === 'errRetry' || screen === 'errFatal') && error && (
-            <ErrorPage error={error} snapshot={snapshot} busy={busy} actions={actions} />
+            <ErrorPage
+              error={error}
+              snapshot={snapshot}
+              busy={interactionBlocked}
+              canExportBrokenSave={canExportBrokenSave}
+              actions={actions}
+            />
           )}
         </div>
       </main>

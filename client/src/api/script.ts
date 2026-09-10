@@ -244,11 +244,16 @@ export function eventForDay(day: number): GameEvent {
   return { id, day, title: draft.title, description: draft.description, options }
 }
 
+function createGameId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `game-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 export function initialSnapshot(): Snapshot {
   return {
     schemaVersion: SCHEMA_VERSION,
     rulesVersion: RULES_VERSION,
-    gameId: 'mock-local',
+    gameId: createGameId(),
     revision: 0,
     phase: 'pendingEvent',
     attributes: { ...INITIAL_ATTRIBUTES },
