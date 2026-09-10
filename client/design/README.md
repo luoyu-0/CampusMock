@@ -21,7 +21,7 @@ client/design/
 ## 打开方式
 
 - 在资源管理器里双击 `prototype.html`，不需要启动任何服务。
-- 想跑本地服务器：`cd /d C:\Users\12451\Desktop\CampusMock\repo\client\design` 后 `python -m http.server 8000`，浏览器开 `http://localhost:8000/prototype.html`。
+- 想跑本地服务器：在仓库根目录执行 `cd client/design` 后 `python -m http.server 8000`，浏览器开 `http://localhost:8000/prototype.html`。
 - 想看手机效果：浏览器打开后按 `F12` → 切到设备工具栏（`Ctrl + Shift + M`）选 iPhone / 390px。
 
 ## 八个状态怎么翻
