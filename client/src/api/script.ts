@@ -54,7 +54,7 @@ export const DAY_SCRIPT: DraftDay[] = [
     options: [
       { text: '排进去，把表填了再说\n反正填了也能退', effects: eff(0, 2, -1, 0), resultText: '表填了，交上去的时候手有点抖' },
       { text: '先加群，线上报名也一样\n当面说太尴尬了', effects: eff(0, 1, 0, 0), resultText: '群里很安静，我至今没说过话' },
-      { text: '领了宣传单就走，说明天再来\n明天应该也会有勇气', effects: eff(0, 1, 0, 0), resultText: '最后只领了一张宣传单，没敢填表' },
+      { text: '领了宣传单就走，说明天再来\n明天应该也会有勇气', effects: eff(0, 0, 0, 0), resultText: '最后只领了一张宣传单，没敢填表' },
     ],
     walk: 2,
   },
@@ -146,7 +146,7 @@ export const DAY_SCRIPT: DraftDay[] = [
       '屏幕里我妈在后面装行李，我爸把手机架在杯子上。\n\n' +
       '他们问了三遍食堂贵不贵，我答了三遍不贵。',
     options: [
-      { text: '说了实话，饭卡这周刷得快\n让他们知道我省', effects: eff(0, 1, 0, -60), resultText: '挂了以后卡里多了两百，备注是「买水果」' },
+      { text: '说了实话，饭卡这周刷得快\n让他们知道我省', effects: eff(0, 1, 0, -60), resultText: '挂了以后我把这个月的账重算了一遍，还能撑到月底' },
       { text: '报喜不报忧，说不缺钱\n说了他们也睡不好', effects: eff(2, -1, 0, 0), resultText: '我挂了电话，把购物车那本书结算了' },
       { text: '顺便说了室友挺好的\n他们最在意这个', effects: eff(0, 1, 0, 0), resultText: '我妈结束前说，那我们就放心了' },
     ],

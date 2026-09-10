@@ -39,7 +39,7 @@ npm run preview -w client
 ```
 
 - `build` 会先跑 `tsc --noEmit` 再打包，所以它同时是类型检查和产物构建。
-- 产物在 `client/dist/`：JS 280 KB（gzip 89 KB）、CSS 11.7 KB、12 张 webp 共 642 KB（文件名带 hash，`dist` 整个发出去才不会掉图）。
+- 产物在 `client/dist/`：JS 281 KB（gzip 89 KB）、CSS 11.9 KB、12 张 webp 共 642 KB（文件名带 hash，`dist` 整个发出去才不会掉图）。
 - `preview` 是本地起个静态服务看构建结果，地址 `http://localhost:4173/`。
 
 **根目录的 `npm run build` 目前会在 `server` 工作区失败**（`server/tsconfig.json` 还不存在）。那是 B/D 的活，前端单独跑上面三条。
@@ -81,12 +81,13 @@ npm run preview -w client
 | 切屏时换哪套侧景 | `client/src/state/useGame.ts` | `sceneFor`（按「天数 + 屏序号」取模，确定值） |
 | 12 张插画的引用地址 | `client/src/sceneArt.ts` | 十行字面量 `new URL(...)` |
 | 顶部走查条（含预设与失败注入） | `client/src/components/ProtoBar.tsx` | 整文件 |
+| 存档写不进去时那条提示 | `client/src/App.tsx` | `saveFailed` 分支（样式在 `global.css` 的 `.save-warn`，布尔由 `useGame.ts` 的 `persist` 给出） |
 | 临时存档的键名与结构 | `client/src/state/store.ts` | `STORAGE_KEY` |
 
 ## 接真后端时要动的地方（给 B / C / D）
 
 1. **只有 `client/src/api/mockApi.ts` 需要换成 `fetch`**。三个函数签名保持「发完整快照、收完整快照」不变，页面和状态机一行都不用改。Vite 已配好 `/api → http://localhost:3000` 代理。
-2. **`client/src/state/store.ts` 是临时 localStorage**，等成员 D 的 `client/src/storage/` 落地就整文件删掉。`useGame.ts` 里用到它的只有三处：`saveSnapshot`（写入）、`loadSnapshot`（挂载时恢复）、`clearSnapshot`（开新局）。
+2. **`client/src/state/store.ts` 是临时 localStorage**，等成员 D 的 `client/src/storage/` 落地就整文件删掉。`useGame.ts` 里用到它的只有三处：`saveSnapshot`（写入）、`loadSnapshot`（挂载时恢复）、`clearSnapshot`（开新局）。**替换时 `saveSnapshot` 必须继续返回 `boolean`**（写成功 `true`、写失败 `false`），这个返回值现在驱动着「这台设备写不进存档」那条提示；写成不返回值的样子，提示条就永远是死的，正撞验收项「不假装保存成功」。
 3. **`client/src/state/types.ts` 是临时类型**，字段严格照 [接口约定](docs/接口约定.md) 写，`shared/` 公共类型定下来后直接换成 import，删掉本地这份。
 
 ## 常见问题
@@ -95,6 +96,7 @@ npm run preview -w client
 - **5173 被占用**：Vite 会自动改用 5174，终端会提示。要固定就改 `client/vite.config.ts` 里的 `port`。
 - **刷新后直接进了第 N 天**：那是存档恢复，符合验收项。想回到第 1 天，点走查条「清掉本机存档」，或走完整流程时点「开始第一天」（它会先清旧档）。
 - **两侧插画没出来**：插画下面各压着一层手绘 SVG 兜底，掉图不会白屏，只是观感退回简版。
+- **顶部出现「这台设备现在写不进存档」**：是本机写入被拦或空间满了（无痕窗口、隐私插件最常见），不是接口故障。这一局还能继续玩，但刷新会退回上一次成功保存的位置；换回普通窗口或关掉插件后，下一次转换写成功，提示条自己消失。
 - **顶部那条灰条是什么**：开发期走查面板，不属于产品界面，见上一节。
 
 ## 是否需要公网部署
@@ -107,8 +109,9 @@ npm run preview -w client
 
 - [x] 8 屏齐全，含两类错误屏。
 - [x] 选择前不泄露效果：带符号数字只可能在 ③ 出现（`DeltaRow` 只在 `ResultCard` 内渲染），「学业」「社交」字样只出现在结局屏（`Grades` 只挂在结局页）和标注框里。逐屏可见文字断言是在原型那一轮跑的（除结局屏外 7 屏均不含字样），React 这轮按组件挂载位置复核了同一条规则。
-- [x] 页面刷新后可恢复。
-- [x] 生成等待、失败重试、防重复结算（`revision` 守卫 + 重试重放同一次请求）。
+- [x] 页面刷新后可恢复。四个阶段（①②③④）各刷新一次实测：每次都回到**同一个态的同一天**，`history` 长度不变，不跳天也不重复结算。
+- [x] 生成等待、失败重试、防重复结算（`revision` 守卫 + 重试重放同一次请求）。同一选项连点三次只 `rev +1`、只多一篇日记；结局生成前注入可重试失败并刷新，存档仍是 `rev 14 / pendingEnding`（**第 14 天没被重做**），点重试后才到 `ended`。
+- [x] 本机写不进存档时不假装保存成功。把 `setItem` 打桩成抛异常后顶部出现常驻提示，游戏仍能继续（不因写不进本机而作废这一局），写入恢复后提示条自行消失。
 - [x] 窄屏 390 与桌面 1440 无横向溢出；localhost + 局域网两个访问源。
 - [ ] 真 AI 内容、真接口联调 —— 等 B、C。
 - [ ] 正式存档模块与一键启动脚本 —— 等 D。

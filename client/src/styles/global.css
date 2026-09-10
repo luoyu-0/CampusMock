@@ -247,6 +247,13 @@ body{
 .card.err .m{font-size:14.5px;color:#7d5250;margin:0}
 .err-ico{width:44px;height:44px;margin-bottom:12px}
 
+/* 存档写不进去时的常驻条：比错误卡弱一档，不挡操作，写入恢复后自己消失 */
+.save-warn{
+  font-size:12.5px;line-height:1.65;color:#7d5250;
+  background:var(--danger-soft);border:1px solid #f6d9d9;border-radius:14px;
+  padding:10px 14px;margin:0 0 14px;
+}
+
 /* ---------- 开始页 ---------- */
 .hero{padding:26px 2px 6px;text-align:center}
 .art-frame{

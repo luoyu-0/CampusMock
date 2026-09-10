@@ -10,7 +10,7 @@ import { useGame } from './state/useGame'
 const GAME_SCREENS = ['generating', 'choice', 'result', 'endingPending']
 
 export default function App() {
-  const { screen, snapshot, busy, error, scene, actions } = useGame()
+  const { screen, snapshot, busy, error, scene, saveFailed, actions } = useGame()
   const [showNotes, setShowNotes] = useState(false)
 
   useEffect(() => {
@@ -35,6 +35,11 @@ export default function App() {
       />
       <SceneBackdrop theme={scene} />
       <main className="stage">
+        {saveFailed && (
+          <p className="save-warn" role="status">
+            这台设备现在写不进存档（浏览器拦了写入，或者空间满了）。这一局还能继续玩，但刷新会退回上一次成功保存的地方。
+          </p>
+        )}
         {/* key={screen} 让每次换屏重挂载一次，global.css 里 .screen.on 的 0.3s 淡入因此仍然成立 */}
         <div className="screen on" key={screen}>
           {screen === 'start' && (

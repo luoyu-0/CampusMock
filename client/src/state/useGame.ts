@@ -56,6 +56,12 @@ export function useGame() {
   /* 读到存档也先停在开始页，让「继续上次的日记」这个入口出现（原型注明两个按钮同一时刻只出现一个） */
   const [entered, setEntered] = useState(false)
   const lastCall = useRef<{ base: Snapshot; call: (s: Snapshot) => Promise<ApiResult> } | null>(null)
+  /* 存档写不进去（配额满、浏览器拦写入）时不能继续装作存上了 —— 验收项「不假装保存成功」。
+     只记一个布尔，不切屏不挡操作：这一局还能继续玩，提示条会说明刷新会退回上一次成功保存的位置。 */
+  const [saveFailed, setSaveFailed] = useState(false)
+  const persist = useCallback((next: Snapshot) => {
+    setSaveFailed(!saveSnapshot(next))
+  }, [])
 
   const dispatch = useCallback(async (base: Snapshot, call: (s: Snapshot) => Promise<ApiResult>) => {
     lastCall.current = { base, call }
@@ -74,8 +80,8 @@ export function useGame() {
     }
     lastCall.current = null
     setSnapshot(result.snapshot)
-    saveSnapshot(result.snapshot)
-  }, [])
+    persist(result.snapshot)
+  }, [persist])
 
   const stepFrom = useCallback(
     (base: Snapshot) => {
@@ -113,9 +119,9 @@ export function useGame() {
     setEntered(true)
     const fresh = initialSnapshot()
     setSnapshot(fresh)
-    saveSnapshot(fresh)
+    persist(fresh)
     void dispatch(fresh, generateEvent)
-  }, [dispatch])
+  }, [dispatch, persist])
 
   const actions = {
     start: startGame,
@@ -154,7 +160,7 @@ export function useGame() {
       setError(null)
       setEntered(true)
       setSnapshot(next)
-      saveSnapshot(next)
+      persist(next)
       if (!hold) stepFrom(next)
     },
     forgetSave() {
@@ -165,7 +171,7 @@ export function useGame() {
     },
   }
 
-  return { screen, snapshot, busy, error, scene, actions }
+  return { screen, snapshot, busy, error, scene, saveFailed, actions }
 }
 
 export type GameActions = ReturnType<typeof useGame>['actions']
