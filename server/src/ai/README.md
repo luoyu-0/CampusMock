@@ -1,6 +1,6 @@
 # AI 内容生成模块（src/ai）
 
-《新生每日印象》的事件与结局生成模块（成员 C 负责）：构建提示词 → 调用 DeepSeek 兼容 API（JSON 输出模式）→ 运行时校验 → 返回结构化内容。无运行时依赖，仅使用 Node 内置 fetch。迭代与实测记录见 [成员C-开发过程.md](../../成员C-开发过程.md)。
+《我的大学日记》的事件与结局生成模块（成员 C 负责）：构建提示词 → 调用 DeepSeek 兼容 API（JSON 输出模式）→ 运行时校验 → 返回结构化内容。无运行时依赖，仅使用 Node 内置 fetch。迭代与实测记录见 [成员C-AI.md](../../docs/成员-C-AI.md)。
 
 ## 结构
 
@@ -54,7 +54,7 @@ const event = await generateEvent(
     day: snapshot.day,
     attributes: snapshot.attributes,
     history: historyFromRecords(snapshot.history),
-    profile, // 可选 PlayerProfile { gender, major }：可不传，未传时模型用中性表述（收集时机待与成员 C 约定）
+    profile, // 可选 PlayerProfile { gender, major }：不传时模型用中性表述（见下节「玩家档案」）
   },
   cfg,
 );
@@ -74,6 +74,12 @@ const ending = await generateEnding(
 ```
 
 接线路由只换生成来源，结算、幂等、快照组装逻辑都不用动；事件字段结构与前端完全一致（成员 A 已核对），前端无需改动。交接现场记录见成员 A 的 `docs/联调待办-B与C.md`。
+
+### 玩家档案（profile）
+
+生成输入（事件、结局皆同）带可选字段 `profile: { gender, major }`，类型 `PlayerProfile` 已从 ai 出口导出，用于让内容贴合玩家身份。不传时模型收到的用户消息是「玩家档案：未收集。请使用中性表述，不要假设玩家的性别与专业，也不要杜撰性别、专业等固定信息」，system 提示词另有硬约束：档案给出的性别与专业是玩家固定信息，不得更改、不得杜撰矛盾信息。
+
+档案不是快照的一部分（快照结构里没有该字段），模块对它只拼接进提示词、不做校验；怎么收集、怎么传到路由层由前端与路由层自行协商。自测：同一开局快照带/不带 profile 各生成一次第 1 天事件，两次 description 对性别与专业的贴合度应有明显差异，不带的那次不得出现具体性别或专业字样。
 
 ### 错误处理
 
