@@ -215,7 +215,7 @@ export function chooseOption(req: Request, res: Response) {
     attributes: afterAttributes,
     history: newHistory,
     phase: newPhase,
-    currentEvent: null,
+    currentEvent:snapshot.currentEvent,
   };
 
   const response: SuccessResponse = {
