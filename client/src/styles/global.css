@@ -230,7 +230,7 @@ body{
 .grade .g{font-size:18px;font-weight:800;letter-spacing:1px}
 .g.a{color:var(--grade-a)} .g.b{color:var(--grade-b)} .g.c{color:var(--grade-c)} .g.d{color:var(--grade-d)}
 .sec{margin-top:20px}
-.sec .h{font-family:var(--font-diary);font-size:16px;font-weight:600;letter-spacing:1px;color:var(--ink);margin-bottom:6px}
+.sec .h{font-family:var(--font-diary);font-size:19px;font-weight:600;letter-spacing:1px;color:var(--brand-deep);margin-bottom:6px}
 
 /* ---------- 等待态 ---------- */
 .skeleton .l{height:13px;border-radius:6px;background:linear-gradient(90deg,#eef1f8,#e2e8f5,#eef1f8);
