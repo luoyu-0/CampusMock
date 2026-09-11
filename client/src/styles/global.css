@@ -24,7 +24,10 @@
   --grade-d:#d97a7a;
   --radius:20px;
   --shadow:0 10px 30px rgba(44,51,69,.08);
-  --font-diary:"Songti SC","STSong","SimSun",Georgia,serif;
+  /* 正文叙事用衬线。Georgia 必须排在最前：字体回退是按字形匹配的，
+     而 Songti SC 自带西文与数字字形，排在后面就轮不到 Georgia 出场。 */
+  --font-diary:Georgia,"Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong","SimSun",serif;
+  --font-ui:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -32,7 +35,7 @@ html,body{margin:0;padding:0}
 body{
   min-height:100vh;
   color:var(--ink);
-  font-family:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  font-family:var(--font-ui);
   font-size:16px;line-height:1.75;
   background:linear-gradient(170deg,var(--sky-top) 0%,#f3f0ff 45%,var(--sky-bottom) 100%);
   background-attachment:fixed;
@@ -153,20 +156,21 @@ body{
 }
 .card .kicker{font-size:12px;letter-spacing:2px;color:var(--ink-faint);margin-bottom:8px}
 .etitle{font-family:var(--font-diary);font-size:24px;line-height:1.4;margin:0 0 12px}
-.body{font-size:15.5px;color:#3a4256;margin:0}
-.body p{margin:0 0 1em}
+.body{font-family:var(--font-diary);font-size:17px;line-height:1.95;letter-spacing:.02em;color:#3a4256;margin:0}
+.body p{margin:0 0 1em;text-indent:2em}
 .body p:last-child{margin-bottom:0}
 
 /* ---------- 选项 ---------- */
 .ask{font-size:14px;color:var(--ink-soft);margin:18px 0 10px}
 .opt{
-  display:block;width:100%;text-align:left;font:inherit;font-size:15px;
+  display:block;width:100%;text-align:left;font:inherit;
+  font-family:var(--font-diary);font-size:16.5px;line-height:1.7;
   background:#fbfcff;border:1px solid var(--line);border-radius:14px;
   padding:14px 16px;margin-bottom:10px;cursor:pointer;color:var(--ink);
   transition:border-color .15s,background .15s,transform .15s;
 }
 .opt:hover{border-color:var(--brand);background:var(--brand-soft);transform:translateY(-1px)}
-.opt small{display:block;font-size:12px;color:var(--ink-faint);margin-top:3px}
+.opt small{display:block;font-family:var(--font-ui);font-size:12px;color:var(--ink-faint);margin-top:3px}
 
 /* ---------- 按钮 ---------- */
 .btn{
