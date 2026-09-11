@@ -31,14 +31,7 @@ import {
   AiError,
 } from '../ai/index';
 
-// ============ 启动时加载 AI 配置 ============
-let aiConfig: ReturnType<typeof loadAiConfig> | null = null;
-try {
-  aiConfig = loadAiConfig();
-  console.log('[AI] Config loaded successfully');
-} catch (err) {
-  console.warn('[AI] Failed to load config, AI features will be unavailable:', err);
-}
+// 在请求阶段读取配置，确保入口文件已加载根目录 .env。
 
 // ============ 工具：HistoryEntry → HistoryDigestItem ============
 function toDigestItem(h: HistoryEntry): HistoryDigestItem {
@@ -83,15 +76,15 @@ function handleAiError(res: Response, requestId: string, err: unknown) {
       AI_INVALID_OUTPUT: 'AI_INVALID_OUTPUT',
     };
     const code = codeMap[err.code] || 'AI_GENERATION_FAILED';
-    return sendError(res, requestId, code, `AI error: ${err.code}`, err.retryable);
+    return sendError(res, requestId, code, err.message, err.retryable);
   }
-  console.error('Unknown AI error:', err);
-  return sendError(res, requestId, 'AI_GENERATION_FAILED', 'AI generation failed', true);
+  console.error('AI 生成发生未知错误：', err);
+  return sendError(res, requestId, 'AI_GENERATION_FAILED', '内容生成暂时失败，请稍后重试。', true);
 }
 
 // ============ 1. POST /api/events/generate ============
 export async function generateEvent(req: Request, res: Response) {
-  const { requestId, snapshot } = req.body as GenerateEventRequest;
+  const { requestId, snapshot } = (req.body ?? {}) as GenerateEventRequest;
 
   if (!requestId) {
     return sendError(res, 'unknown', 'MISSING_REQUEST_ID', 'Missing requestId', false);
@@ -119,13 +112,10 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'GAME_COMPLETED', 'Game already ended', false);
   }
 
-  if (!aiConfig) {
-    return sendError(res, requestId, 'AI_CONFIG_ERROR', 'AI config not loaded, check DEEPSEEK_API_KEY', false);
-  }
-
   const day = getCurrentDay(snapshot);
 
   try {
+    const aiConfig = loadAiConfig();
     const eventData = await aiGenerateEvent(
       {
         day,
@@ -163,7 +153,7 @@ export async function generateEvent(req: Request, res: Response) {
 
 // ============ 2. POST /api/events/choose ============
 export function chooseOption(req: Request, res: Response) {
-  const { requestId, snapshot, eventId, optionId } = req.body as ChooseOptionRequest;
+  const { requestId, snapshot, eventId, optionId } = (req.body ?? {}) as ChooseOptionRequest;
 
   if (!requestId || !snapshot || !eventId || !optionId) {
     return sendError(res, requestId || 'unknown', 'MISSING_PARAMS', 'Missing required params', false);
@@ -215,7 +205,7 @@ export function chooseOption(req: Request, res: Response) {
     attributes: afterAttributes,
     history: newHistory,
     phase: newPhase,
-    currentEvent:snapshot.currentEvent,
+    currentEvent: snapshot.currentEvent,
   };
 
   const response: SuccessResponse = {
@@ -228,7 +218,7 @@ export function chooseOption(req: Request, res: Response) {
 
 // ============ 3. POST /api/endings/generate ============
 export async function generateEnding(req: Request, res: Response) {
-  const { requestId, snapshot } = req.body as GenerateEndingRequest;
+  const { requestId, snapshot } = (req.body ?? {}) as GenerateEndingRequest;
 
   if (!requestId || !snapshot) {
     return sendError(res, requestId || 'unknown', 'MISSING_PARAMS', 'Missing required params', false);
@@ -257,11 +247,8 @@ export async function generateEnding(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_PHASE', 'Current phase does not allow ending generation', false);
   }
 
-  if (!aiConfig) {
-    return sendError(res, requestId, 'AI_CONFIG_ERROR', 'AI config not loaded, check DEEPSEEK_API_KEY', false);
-  }
-
   try {
+    const aiConfig = loadAiConfig();
     const grades = getGrades(snapshot.attributes);
 
     const endingData = await aiGenerateEnding(
@@ -277,6 +264,7 @@ export async function generateEnding(req: Request, res: Response) {
     newSnapshot = {
       ...newSnapshot,
       phase: 'ended',
+      currentEvent: null,
       ending: {
         finalAttributes: { ...snapshot.attributes },
         grades,

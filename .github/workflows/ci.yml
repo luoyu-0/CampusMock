@@ -39,6 +39,9 @@ jobs:
       - name: 构建前后端
         run: npm run build
 
+      - name: 验证 AI 接线与完整游戏流程（模拟上游）
+        run: node --test server/tests/ai-integration.cjs
+
       - name: 启动服务并执行冒烟测试
         shell: bash
         run: |
