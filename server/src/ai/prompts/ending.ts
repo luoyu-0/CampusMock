@@ -2,7 +2,7 @@ import { ATTRIBUTE_KEYS, type EndingGenInput } from "../schema.js";
 import { ATTRIBUTE_LABELS, formatHistory } from "./common.js";
 import { ENDING_TEXT_LIMITS } from "./values.js";
 
-// 提示词草案 v0.1.5：v0.1.2 增补沉浸感约束（禁档位字母与数值）；v0.1.3 增补背景设定（军训在两周之后、学期开端无期末）；v0.1.4 增补玩家自主权（只引用实际发生的选择，不预设爱好）；v0.1.5 玩家档案改为可选，未收集时用中性表述（2026-09-10 建议区间改由上限推导、恢复 values.ts 单一来源）
+// 提示词 v0.1.5：玩家档案可选，未收集时用中性表述；各版本改动见 docs/成员-C-AI.md 进度记录
 function suggestRange(limit: number): string {
   return `${Math.ceil(limit * 0.65)}～${Math.floor(limit * 0.92)} 字`;
 }
