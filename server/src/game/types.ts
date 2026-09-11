@@ -1,3 +1,7 @@
+// ============================================
+// 类型定义
+// ============================================
+
 export type AttributeKey = 'academics' | 'social' | 'energy' | 'money';
 export type Attributes = Record<AttributeKey, number>;
 export type Effects = Attributes;
@@ -11,7 +15,7 @@ export interface EventOption {
   resultText: string;
 }
 
-export interface EventData {
+export interface GameEvent {
   id: string;
   day: number;
   title: string;
@@ -19,7 +23,7 @@ export interface EventData {
   options: EventOption[];
 }
 
-export interface HistoryRecord {
+export interface HistoryEntry {
   day: number;
   eventId: string;
   optionId: string;
@@ -29,7 +33,7 @@ export interface HistoryRecord {
   effects: Effects;
 }
 
-export interface EndingResult {
+export interface Ending {
   finalAttributes: Attributes;
   grades: Record<AttributeKey, Grade>;
   title: string;
@@ -38,21 +42,21 @@ export interface EndingResult {
   advice: string;
 }
 
-export interface GameSnapshot {
+export interface Snapshot {
   schemaVersion: number;
   rulesVersion: number;
   gameId: string;
   revision: number;
   phase: Phase;
   attributes: Attributes;
-  history: HistoryRecord[];
-  currentEvent: EventData | null;
-  ending: EndingResult | null;
+  history: HistoryEntry[];
+  currentEvent: GameEvent | null;
+  ending: Ending | null;
 }
 
 export interface GenerateEventRequest {
   requestId: string;
-  snapshot: GameSnapshot;
+  snapshot: Snapshot;
 }
 
 export interface ChooseOptionRequest extends GenerateEventRequest {
@@ -60,10 +64,15 @@ export interface ChooseOptionRequest extends GenerateEventRequest {
   optionId: string;
 }
 
+export interface GenerateEndingRequest {
+  requestId: string;
+  snapshot: Snapshot;
+}
+
 export interface SuccessResponse {
   requestId: string;
   baseRevision: number;
-  snapshot: GameSnapshot;
+  snapshot: Snapshot;
 }
 
 export interface ErrorResponse {
@@ -73,4 +82,12 @@ export interface ErrorResponse {
     message: string;
     retryable: boolean;
   };
+}
+
+export interface HistoryDigestItem {
+  day: number;
+  eventTitle: string;
+  chosenOptionText: string;
+  resultText: string;
+  effects: Effects;
 }
