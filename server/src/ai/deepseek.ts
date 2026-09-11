@@ -26,7 +26,7 @@ export interface AiConfig {
 }
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
-const DEFAULT_MODEL = "deepseek-chat";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_TEMPERATURE = 1.0;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -81,6 +81,8 @@ export async function chatJSON(cfg: AiConfig, system: string, user: string): Pro
             { role: "user", content: user },
           ],
           response_format: { type: "json_object" },
+          thinking: { type: "disabled" },
+          max_tokens: 2048,
           temperature: cfg.temperature,
         }),
         signal: controller.signal,
