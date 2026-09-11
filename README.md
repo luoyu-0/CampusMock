@@ -4,7 +4,7 @@
 
 产品展示名采用“我的大学日记”，仓库与技术标识继续使用 `CampusMock`。该定位与每天 1 个事件的内容密度一致，避免产品名称与 MVP 实际内容产生落差。
 
-> 当前已完成 React 前端、Express 游戏接口、14 天完整流程、浏览器存档与恢复。前后端已经联通；DeepSeek 真实模型调用仍在开发中，服务端暂用可替换的模拟生成逻辑。
+> 当前已完成 React 前端、Express 游戏接口、DeepSeek 接入、浏览器存档与恢复。已实测连续两天的真实事件生成与结算；完整 14 天和结局流程通过模拟上游回归测试。
 
 ## 已确认的项目约束
 
@@ -119,7 +119,7 @@ npm install
 cp .env.example .env
 ```
 
-默认配置 `VITE_API_MODE=server`，前端将请求 Express。当前服务端使用模拟生成逻辑，不填写 `DEEPSEEK_API_KEY` 也能跑完一局；接入真实模型后再把密钥写入本机 `.env`。`.env` 已被 Git 忽略，API 密钥不能写入前端代码或提交到仓库。
+默认使用 `VITE_API_MODE=server`，前端将请求 Express，并由后端调用 DeepSeek。请在本机根目录 `.env` 中填写 `DEEPSEEK_API_KEY`，模型默认使用 `deepseek-v4-flash`；修改配置后重启后端。未配置密钥时会返回配置错误，如需离线体验请切换为下文的 `mock` 模式。`.env` 已被 Git 忽略，API 密钥不能写入前端代码或提交到仓库。
 
 ### 开发模式：前后端联调
 
