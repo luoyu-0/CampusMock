@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke:
+    name: 构建与冒烟测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 按锁文件安装依赖
+        run: npm ci
+
+      - name: 构建前后端
+        run: npm run build
+
+      - name: 启动服务并执行冒烟测试
+        shell: bash
+        run: |
+          npm start > server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=false
+          for _ in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3000/health > /dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "Express 未能在规定时间内启动"
+            cat server.log
+            exit 1
+          fi
+
+          echo "检查生产前端页面"
+          curl --fail --silent http://127.0.0.1:3000/ \
+            | grep -q '<div id="root"></div>'
+
+          cat > /tmp/choice-request.json <<'JSON'
+          {
+            "requestId": "ci-choice-1",
+            "snapshot": {
+              "schemaVersion": 1,
+              "rulesVersion": 1,
+              "gameId": "ci-game",
+              "revision": 1,
+              "phase": "pendingChoice",
+              "attributes": {
+                "academics": 0,
+                "social": 0,
+                "energy": 7,
+                "money": 1000
+              },
+              "history": [],
+              "currentEvent": {
+                "id": "ci-event-1",
+                "day": 1,
+                "title": "CI 测试事件",
+                "description": "验证选择接口能够完成确定性结算。",
+                "options": [
+                  {
+                    "id": "option-a",
+                    "text": "选择 A",
+                    "effects": {
+                      "academics": 1,
+                      "social": 0,
+                      "energy": -1,
+                      "money": 0
+                    },
+                    "resultText": "完成选择 A。"
+                  },
+                  {
+                    "id": "option-b",
+                    "text": "选择 B",
+                    "effects": {
+                      "academics": 0,
+                      "social": 1,
+                      "energy": 0,
+                      "money": -10
+                    },
+                    "resultText": "完成选择 B。"
+                  }
+                ]
+              },
+              "ending": null
+            },
+            "eventId": "ci-event-1",
+            "optionId": "option-a"
+          }
+          JSON
+
+          echo "检查选择结算接口"
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data @/tmp/choice-request.json \
+            --output /tmp/choice-response.json \
+            http://127.0.0.1:3000/api/events/choose
+
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          const response = JSON.parse(
+            fs.readFileSync('/tmp/choice-response.json', 'utf8'),
+          )
+
+          const snapshot = response.snapshot
+          const valid =
+            response.requestId === 'ci-choice-1' &&
+            response.baseRevision === 1 &&
+            snapshot?.revision === 2 &&
+            snapshot?.phase === 'showResult' &&
+            snapshot?.history?.length === 1 &&
+            snapshot?.attributes?.academics === 1 &&
+            snapshot?.attributes?.energy === 6
+
+          if (!valid) {
+            console.error('选择接口返回结果不符合契约：')
+            console.error(JSON.stringify(response, null, 2))
+            process.exit(1)
+          }
+          NODE
