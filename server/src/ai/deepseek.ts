@@ -127,15 +127,24 @@ export async function chatJSON(cfg: AiConfig, system: string, user: string): Pro
   }
 }
 
-// 可重试错误自动重试，最多 cfg.maxAttempts 次；不可重试错误立即抛出
-export async function chatJSONWithRetry(cfg: AiConfig, system: string, user: string): Promise<unknown> {
+// 统一重试入口（最多 cfg.maxAttempts 次）：可重试错误自动重试，不可重试错误立即抛出。
+// validate 失败（AI_INVALID_OUTPUT）时把问题清单注入下一次 user 提示词，让模型针对性自纠。
+export async function chatJSONWithRetry<T>(
+  cfg: AiConfig,
+  system: string,
+  buildUser: (feedback: string | null) => string,
+  validate: (raw: unknown) => T,
+): Promise<T> {
   let lastError = new AiError("AI_UPSTREAM", "模型调用未执行", false);
+  let feedback: string | null = null;
   for (let attempt = 1; attempt <= cfg.maxAttempts; attempt++) {
     try {
-      return await chatJSON(cfg, system, user);
+      const raw = await chatJSON(cfg, system, buildUser(feedback));
+      return validate(raw);
     } catch (err) {
       lastError = err instanceof AiError ? err : new AiError("AI_UPSTREAM", "模型调用发生未知错误", false);
       if (!lastError.retryable) throw lastError;
+      if (lastError.code === "AI_INVALID_OUTPUT") feedback = lastError.message;
     }
   }
   throw lastError;
