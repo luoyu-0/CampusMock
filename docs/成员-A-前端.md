@@ -10,8 +10,9 @@
 - **上一轮那批「未提交」的东西现在已经在主干上了**：`client/` 的页面、状态机、走查条与文档经 PR #4 合入 `main`，成员 D 又把临时的 `src/state/store.ts` 换成了 `src/storage/`。下面「已完成内容」里凡涉及 `store.ts` 与「未调用后端」的表述是当时的记录，以本段为准。
 - **本轮（2026-09-11）做的两件事**：① 用真实 Express 把 14 天 + 异常与重复操作端到端跑了一遍（数据见验证记录）；② 给走查面板补 `⑥ 顶格长文案`、`⑦ 顶格结局` 两个态，按成员 C `server/src/ai/prompts/values.ts` 里的字段上限把文字填满。
 - **上一轮那条「`controller.ts` 一行都没 import `src/ai/`」已经过期**：成员 B 的 PR #13（合并于 `7ee4b00`）把生成事件与生成结局都接到了 C 的模块上，`server/src/game/controller.ts:27-32` 现在确实从 `../ai/index` 导入 `generateEvent` / `generateEnding` / `loadAiConfig`。所以顶格夹具不再是「等接线那天才用得上」，而是现在就能拿来验真实模型排版的现成数据。界面侧唯一的未知仍然是真实输出的排版。
-- **接线换出来一个新的前置条件**：`controller.ts:122`（结局侧在 `:260`）在没配 `DEEPSEEK_API_KEY` 时返回 `AI_CONFIG_ERROR` 且 `retryable: false`，界面直接停在可重试错误屏。这一屏的真实呈现我核过了（文案、按钮、不消耗当天都成立），但结论要记在这儿：**演示前必须先有人把密钥配进仓库根目录的 `.env`**，否则 `server` 模式连第 1 天都进不去。
-- 我能独立做完的这轮做完了。AI 接线已由 #13 落地，剩下的：`⑥⑦` 两个顶格态在屏幕上的实际折行仍需人眼过一遍（数据合法性与静态样式已核，见验证记录最后两条）；配好密钥后跑一次真实模型输出；真机局域网验收（D）。`README.md` 与 `Deploy.md` 现在由负责人维护，我没动。
+- **接线换出来一个新的前置条件**：`controller.ts` 在没配 `DEEPSEEK_API_KEY` 时返回 `AI_CONFIG_ERROR` 且 `retryable: false`，界面停在**不可重试**屏。今晚实测确认呈现是「这本日记我读不懂 / AI config not loaded, check DEEPSEEK_API_KEY / 查看处理说明」，不是可重试那一屏（上一版这里写反了，已改）。顺带一条契约缺陷：`sendError` 的 message 是英文，而 `docs/接口约定.md:50` 要求提示用简体中文——#19 只把 AI 那条分支换成透传 `err.message`，其余仍是英文。
+- **本轮（2026-09-11 深夜）第三件事：正文排版整体改衬线**，走「纸质刊物」方向，单文件 `client/src/styles/global.css` +13/−8，分支 `feat/client-prose-serif` 已推、PR 待评审。逐条取值与两条踩过的坑见「已完成内容」最后一条。
+- 我这轮能独立做完的做完了。事实更新：`DEEPSEEK_API_KEY` 已配进本机 `.env`（不入库），PR #19 把 `loadAiConfig()` 挪到请求阶段（此前 `npm run dev:server` 因 cwd 在 `server/` 根本读不到根目录 `.env`），PR #17 让 `choose` 保留 `currentEvent`（`validateSnapshot` 的 `showResult` 分支要求它非空，前端不用改）。**剩下的**：`⑥⑦` 两个顶格态在屏幕上的实际折行仍需人眼过一遍；真实模型输出下的衬线观感没验过；真机局域网验收（D）。`README.md` 与 `Deploy.md` 由负责人维护，我没动。
 - 阻塞条件：`shared/` 公共类型归属仍未定（见待协作事项 1）。实测对过一遍表：我这边的 `client/src/state/types.ts` 与 B 的 `server/src/game/types.ts` **字段名与结构完全一致**，只有类型名不同（`GameEvent`↔`EventData`、`GameOption`↔`EventOption`、`HistoryEntry`↔`HistoryRecord`、`Ending`↔`EndingResult`），前端不需要改字段，定归属时按 B 的命名走即可。
 
 ## 已完成内容
@@ -44,6 +45,14 @@
 - **走查面板补两个顶格态（2026-09-11）**：`client/src/api/presets.ts` 新增 `longText`（第 5 天·待选择）与 `longEnding`（已结束）。字量不是我随手写的长句，是照 C 的 `server/src/ai/prompts/values.ts` 逐项顶到上限：事件 title 30/30、description 300 字写成三段（段间空行，走 `paragraphs()` 切多个 `<p>`）、三个选项 text 分别 55/54/59 且每个都带第二行动机（走 `splitOption()`）、resultText 115/116/120；结局 description 399/400（四段）、evaluation 194/200、advice 138/150。之前的走查态最长只有二三十字，等于排版从没按真实上限验过。
   两个态都**复用 `day4Settled()` / `fullWalkSnapshot()` 的历史，只换文案不换数值**，因此属性与历史重算仍然一致——`⑥` 能被真实 Express 的 `validateSnapshot` 接纳并正常结算（实测见验证记录），点任一选项就会走真接口进 `③ 展示结果`，长 `resultText` 也在真链路上验到，不必等模型。效果值同时覆盖三种显示规则：`money: 0` → 「没变」、`money: -300` → 规则允许的最大单笔支出、`energy: -2`。走查条本身 `flex-wrap:wrap`，多两个按钮不会撑破窄屏；`global.css` 里文本容器没有 `nowrap`/`line-clamp`/固定 `height`，只有插画框有 `overflow:hidden`，所以超长文字不会被裁掉（静态核对，非截图）。
   代价如实记一条：这批夹具会打进生产包，`npm run build -w client` 的 JS 从 281.98 KB 涨到 285.11 KB（gzip 89.25 → 90.95），+3.13 KB。走查条在生产构建里根本不渲染，但 `presets.ts` 被它静态 import，所以没被摇掉。为省 3 KB 改成动态 import 不值得，记下来备查。
+- **正文排版整体改衬线（2026-09-11 深夜，`feat/client-prose-serif`，单文件 +13/−8）**：需求来自两条反馈——「文字看着太单调」和「结局页『评价』『给接下来几周的你』和正文分不开」。方向定成纸质刊物：叙事走衬线，控件与注解留无衬线。改动全在 `client/src/styles/global.css`。
+  - `--font-diary` 由 `"Songti SC","STSong","SimSun",Georgia,serif` 换成 `Georgia,"Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong","SimSun",serif`；新增 `--font-ui` 变量，`body` 从硬编码字体栈改为引用它。
+  - `.body` → 衬线 17px / 行高 1.95 / 字距 .02em / 段首缩进 2em。`.body` 全仓库只有 5 个消费点，都是叙事文字（事件详情、结果正文、结局的详情 / 评价 / 建议），所以这次改动不会波及控件。
+  - `.opt` 主行跟正文同族 16.5px，第二行动机 `.opt small` 显式留无衬线 12px，形成「叙事 / 注解」两层。
+  - `.card .kicker` 12→13px、字距 2→1px、`--ink-faint`→`--ink-soft`，前置 Georgia 让「第 5 天 · 9 月 5 日」里的数字走衬线。
+  - `.sec .h` 13px 品牌蓝 → 19px 衬线 `--brand-deep`。
+
+  **两条坑记下来，别被退回时重踩**：① CSS 字体回退是**按字形**匹配的，Georgia 必须排在中文衬线**之前**——`Songti SC` 自带西文与数字字形，排在后面就轮不到它出场，改顺序等于把数字也换成宋体。② Windows 宋体没有真粗体，`font-weight:600` 是浏览器合成的假粗，实际不构成层级区分。`.sec .h` 第一版用 16px + 墨色，与 17px 衬线正文之间字号差和色相差都接近 0，唯一指望的字重又不生效，所以「改了等于没改」；现在层级靠**字号 + 色相**两个量同时起作用，字重只是顺带。
 
 
 ## 接口与依赖
@@ -106,7 +115,8 @@
 **给团队：**
 
 20. **两个错误屏现在很难演。** `setFault()` 失败注入只在前端假 API（`VITE_API_MODE=mock`）里生效，默认 `server` 模式下走查面板那两颗按钮是 `disabled` 的。真链路上要复现「可重试」只能把 Express 停掉（会拿到 `NETWORK_ERROR`，实测成立），要复现「不可重试」得让服务端返回 `retryable: false` 的错误码——目前只有喂一份坏存档才能触发。演示时如果临时想截这两屏，`VITE_API_MODE=mock` 起一次前端是最省事的办法，需要有人把这写进运行说明（`Deploy.md` 现在归负责人，我没动）。
-21. **上一条依赖的 `VITE_API_MODE` 现在照 `.env.example` 配不出来**（给成员 B / D）。`7ee4b00` 上这份文件只剩 6 个 `DEEPSEEK_*` / `AI_*` 键，`PORT`、`VITE_API_MODE`、`VITE_ENABLE_PROTO_BAR` 三个都不在了，而 `client/vite.config.ts` 的 `envDir` 指向仓库根、`server/src/index.ts` 也从根目录读 `.env` —— 这份文件是前后端共用的唯一入口，删掉的恰好是前端那三个。后果：新同学照模板配出来的前端只能打真后端，一旦没密钥就正好落进上面那条 `AI_CONFIG_ERROR` 死胡同，而离线路径在仓库里查不到怎么开。另外文件首行带 BOM（`U+FEFF`），有人拿脚本读它会多出一个不可见字符。顺带一条同族的漂移：`server/src/ai/deepseek.ts:30` 的默认模型是 `deepseek-chat`，而成员 C 的开发记录写的是实测跑 `deepseek-v4-flash` —— 没人显式写 `DEEPSEEK_MODEL` 时，跑起来的不是他测过的那个模型。这三处都在别人的文件里，我只报不动。
+21. **上一条依赖的 `VITE_API_MODE` 现在照 `.env.example` 配不出来**（给成员 B / D）。`7ee4b00` 上这份文件只剩 6 个 `DEEPSEEK_*` / `AI_*` 键，`PORT`、`VITE_API_MODE`、`VITE_ENABLE_PROTO_BAR` 三个都不在了，而 `client/vite.config.ts` 的 `envDir` 指向仓库根、`server/src/index.ts` 也从根目录读 `.env` —— 这份文件是前后端共用的唯一入口，删掉的恰好是前端那三个。后果：新同学照模板配出来的前端只能打真后端，一旦没密钥就正好落进上面那条 `AI_CONFIG_ERROR` 死胡同，而离线路径在仓库里查不到怎么开。另外文件首行带 BOM（`U+FEFF`），有人拿脚本读它会多出一个不可见字符。**同条里那个模型名漂移已由 #19 闭环**：`.env.example` 与 `server/src/ai/deepseek.ts` 的默认值现在都是 `deepseek-v4-flash`，不再是我记录时写的 `deepseek-chat`。剩下的两处（三个前端键仍缺、BOM 仍在）还在别人文件里，我只报不动。
+22. **衬线字体栈在演示机上不一定成立，需要有人拍板**（给团队）。`--font-diary` 现在依赖 Georgia（Windows / macOS 自带）+ `SimSun`（Windows 中文衬线兜底），整条链在两台主流桌面上都落得下来。但如果演示机是 Linux、精简版系统，或者局域网设备是安卓浏览器，中文衬线会一路掉到末尾的 `serif` 默认值——观感从「纸质刊物」退回系统默认，而且**每台设备不一样，截图不可复现**。三个选项：① 认了这个风险，演示只用 Windows；② 内嵌一个中文衬线子集（只覆盖界面实际用到的字，按 14 天真实文案估计在几百 KB 量级，我没实测过，别照这个数字决策）；③ 退回无衬线，放弃这轮方向。我倾向 ①，但这条判断要看明天到底在几台什么设备上看，你们定了我再动。
 
 ## 验证记录
 
@@ -153,4 +163,7 @@
 - 验证方式（本轮构建）：`npm run typecheck -w client` 干净；`npm run build -w client` 通过；根目录 `npm run build` 前后端都通过（上一轮记的失败已复现并确认为依赖没装上，见待协作 15 的环境坑）。
 - **本轮如实记一条局限**：浏览器自动化仍被本机权限策略拦着，`⑥⑦` 两态**我只做到"数据合法 + 静态核对样式不会被裁切"，没有截图确认观感**。窄屏 390 与桌面 1440 下顶格文案的实际折行、结局页四段长文是否过长需要人眼过一遍——起 dev 后点走查面板的 `⑥ 顶格长文案` / `⑦ 顶格结局` 即可，各一次点击。
 - 结果（2026-09-11 晚，在 `7ee4b00` 上复核）：根目录 `npm run build` 前后端仍然全通。**前提是依赖按锁文件装全**——`dotenv` 是 #13 新加进来的依赖，`node_modules` 没重装就会在 `server/src/index.ts:1` 报 `Cannot find module 'dotenv/config'`，这是环境不是代码，别照着它去改启动方式。另外实机核对了一次网络失败路径：`server` 模式下后端没起来时点「开始」，界面停在 `errRetry`，出「今天的日记还没写完 / 暂时联系不上服务，当前进度没有改变」+「再试一次」+「先回到上一页」+ 底部「重试不会消耗这一天，也不会重复结算」，走查条读数仍是 `已写 0/14 篇 · rev 0` —— 即"请求失败不推进进度"这条在真链路上成立，且这条路径与 `AI_CONFIG_ERROR`（服务端起来了但没配密钥）呈现的是同一屏。
-- 仍存在的问题：深色模式没做（不在本轮范围）；动效只确认在跑，低端局域网设备上的帧率没测；`⑥⑦` 的观感待人眼确认（上一条）；**接线之后真实模型输出至今一次都没跑过**，缺的是密钥不是代码；模型接线后如果 C 放宽 `TEXT_LIMITS`（注释里写着"草案值，实测后调整"），顶格夹具要跟着改一次上限，两处数字都在 `server/src/ai/prompts/values.ts`，别在夹具里写死第二次。
+- 结果（字体这轮）：`npm run build -w client` 通过，CSS 12.54 kB / gzip 3.75 kB（改前 12.23 / 3.67）；把 `origin/main` 的 #17、#19 两次合进来后，根目录 `npm run build` 前后端各再跑通一次。观感在本机桌面档由人眼过了 `② 待选择`、`⑤ 已结束`、`⑦ 顶格结局` 三屏，反馈「效果可以」。**未做**：390 窄屏截图回归——段首缩进 2em 与行高 1.95 的实际折行只做了静态推算（350px 内容宽减 34px 缩进，约合每行 18~19 个汉字），没有留档。
+- 方法记录（比读代码可靠的一条，值得复用）：**判构建产物到底跑哪种 API 模式，去产物里搜接口路径字符串**。`import.meta.env.VITE_*` 是构建期烘进去的，`mock` 分支一旦生效，`post('/api/events/generate')` 会被整条摇掉。今晚实测：mock 模式的产物搜得到假剧本文字、搜不到三个 `/api/...` 路径；改回 server 重新构建后 `api/events/generate`、`api/events/choose`、`api/endings/generate` 各命中 1 次。顺带把三个开关的体积贡献分离测了一遍：基线 285.11 kB，只开走查条 291.93（+6.82），只设 mock 288.60（+3.49），两个都开 293.41——**走查条才是大头**。
+  这条探针当场抓到一个真事故：本机 `.env` 被手工编辑时丢了全部 `#` 注释符，于是原本作为说明留在文件里的 `VITE_API_MODE=mock` 变成一条生效赋值，前端**一个请求都不发**，表现就是负责人说的「没有调用接口」。根因不在代码也不在接口约定，但暴露了一个通用风险：**配置模板里不该留"注释掉的赋值行"**，因为它对任何一次手滑编辑都是敞开的。这条建议交给负责 `.env.example` 的人（见待协作 21）。
+- 仍存在的问题：深色模式没做（不在本轮范围）；动效只确认在跑，低端局域网设备上的帧率没测；`⑥⑦` 的观感待人眼确认（上一条）；模型接线后如果 C 放宽 `TEXT_LIMITS`（注释里写着"草案值，实测后调整"），顶格夹具要跟着改一次上限，两处数字都在 `server/src/ai/prompts/values.ts`，别在夹具里写死第二次。**真实模型输出今晚才第一次可达**：密钥已配进本机 `.env`，PR #19 又把 `loadAiConfig()` 从模块初始化挪到请求阶段——在那之前 `npm run dev:server` 因为 cwd 落在 `server/`，永远读不到根目录 `.env`，无论密钥对不对都报 `AI_CONFIG_ERROR`。**但衬线排版在真实字量下的观感还没肉眼过一遍**，这是字体这条唯一剩下的未验证项。
