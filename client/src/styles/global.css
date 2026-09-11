@@ -154,7 +154,8 @@ body{
   background:var(--paper);border-radius:var(--radius);
   padding:22px 20px;box-shadow:var(--shadow);margin-bottom:14px;
 }
-.card .kicker{font-size:12px;letter-spacing:2px;color:var(--ink-faint);margin-bottom:8px}
+/* Georgia 排在 UI 栈之前：回退按字形匹配，数字与西文用 Georgia，中文仍落到无衬线 */
+.card .kicker{font-family:Georgia,var(--font-ui);font-size:13px;letter-spacing:1px;color:var(--ink-soft);margin-bottom:8px}
 .etitle{font-family:var(--font-diary);font-size:24px;line-height:1.4;margin:0 0 12px}
 .body{font-family:var(--font-diary);font-size:17px;line-height:1.95;letter-spacing:.02em;color:#3a4256;margin:0}
 .body p{margin:0 0 1em;text-indent:2em}
@@ -229,7 +230,7 @@ body{
 .grade .g{font-size:18px;font-weight:800;letter-spacing:1px}
 .g.a{color:var(--grade-a)} .g.b{color:var(--grade-b)} .g.c{color:var(--grade-c)} .g.d{color:var(--grade-d)}
 .sec{margin-top:20px}
-.sec .h{font-size:13px;letter-spacing:2px;color:var(--brand);margin-bottom:6px}
+.sec .h{font-family:var(--font-diary);font-size:16px;font-weight:600;letter-spacing:1px;color:var(--ink);margin-bottom:6px}
 
 /* ---------- 等待态 ---------- */
 .skeleton .l{height:13px;border-radius:6px;background:linear-gradient(90deg,#eef1f8,#e2e8f5,#eef1f8);
