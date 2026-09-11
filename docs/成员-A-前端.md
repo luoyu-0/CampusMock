@@ -97,8 +97,10 @@
 
 **给成员 B / C：**
 
+> 下面 18、19 两条已整理成独立交接文档 [联调待办-B与C](联调待办-B与C.md)（带可粘贴的复现命令、接线要改的具体位置和错误码透传建议），讨论请在那份文件里进行；这里只留摘要，免得两处文字各自漂移。
+
 18. **成员 C 的 `server/src/ai/` 一行都没接上。** `server/src/game/controller.ts:70` 调的是同文件里第 7 行的 `mockGenerateEvent`，`generateEnding` 同理（第 137 行 → `mockGenerateEnding`）；全仓库 grep 没有任何一处 `import` 指向 `src/ai/`。PR #10 只把模块和 `constants.ts` 的类型对齐并了进来。后果按验收项摆一下：「事件与结局来自模型输出」「内容多样性与前后承接」这两条今天端到端是**过不了**的，界面上能看见的现象是——14 天每天都是同一句「你走在校园里，遇到了一件需要自己决定的小事」，三个选项也恒定不变。接线本身是 B/C 的活（我这边不用改任何代码，事件字段结构完全一致），但**这条要在今晚之前定谁做**，否则明天演示只能演到占位文案。
-19. **服务端不校验 `revision`，客户端校验了。** 我拿一份 `revision: 99` 的旧快照去打 `/api/events/choose`，返回 HTTP 200 并且正常结算。也就是说"过期请求晚到"这件事目前只有 `useGame.ts` 在挡（token + `requestId` + `gameId` + `revision` + `baseRevision` 五重比对），换一个客户端或者直接 curl 就能把同一事件结算两次。我不改这条是因为职责在 B，但请 B 认一下：是在 `validateSnapshot` 里比对 `revision` 与 `history.length`（`pendingChoice` 时 `revision` 应为 `2 × history.length + 1`），还是明确写成"服务端信任客户端提供的修订号"并记进接口约定。
+19. **服务端不校验 `revision`。** 我拿一份 `revision: 99` 的旧快照去打 `/api/events/choose`，返回 HTTP 200 并正常结算。"同一事件重复提交"服务端是挡住的（按 `eventId` 命中历史直接回原快照），但服务端无状态、无从知道哪份是最新进度，所以**旧快照会被当作当前状态接受并产出分叉结果**；浏览器路径上目前只有 `useGame.ts` 那五重比对在挡。修法很便宜，见交接文档的方案一。
 
 **给团队：**
 
