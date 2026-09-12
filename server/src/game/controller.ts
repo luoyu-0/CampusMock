@@ -31,15 +31,6 @@ import {
   AiError,
 } from '../ai/index';
 
-// ============ 启动时加载 AI 配置 ============
-let aiConfig: ReturnType<typeof loadAiConfig> | null = null;
-try {
-  aiConfig = loadAiConfig();
-  console.log('[AI] Config loaded successfully');
-} catch (err) {
-  console.warn('[AI] Failed to load config, AI features will be unavailable:', err);
-}
-
 // ============ 工具：HistoryEntry → HistoryDigestItem ============
 function toDigestItem(h: HistoryEntry): HistoryDigestItem {
   return {
@@ -92,7 +83,7 @@ function handleAiError(res: Response, requestId: string, err: unknown) {
       AI_INVALID_OUTPUT: 'AI_INVALID_OUTPUT',
     };
     const code = codeMap[err.code] || 'AI_GENERATION_FAILED';
-    return sendError(res, requestId, code, `AI error: ${err.code}`, err.retryable);
+    return sendError(res, requestId, code, err.message, err.retryable);
   }
   console.error('Unknown AI error:', err);
   return sendError(res, requestId, 'AI_GENERATION_FAILED', 'AI generation failed', true);
@@ -100,7 +91,7 @@ function handleAiError(res: Response, requestId: string, err: unknown) {
 
 // ============ 1. POST /api/events/generate ============
 export async function generateEvent(req: Request, res: Response) {
-  const { requestId, snapshot, profile } = req.body as GenerateEventRequest;
+  const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEventRequest;
 
   if (!requestId) {
     return sendError(res, 'unknown', 'MISSING_REQUEST_ID', 'Missing requestId', false);
@@ -127,14 +118,11 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'GAME_COMPLETED', 'Game already ended', false);
   }
 
-  if (!aiConfig) {
-    return sendError(res, requestId, 'AI_CONFIG_ERROR', 'AI config not loaded, check DEEPSEEK_API_KEY', false);
-  }
-
   const day = getCurrentDay(snapshot);
   const normalizedProfile = normalizeProfile(profile);
 
   try {
+    const aiConfig = loadAiConfig();
     const eventData = await aiGenerateEvent(
       {
         day,
@@ -172,7 +160,7 @@ export async function generateEvent(req: Request, res: Response) {
 
 // ============ 2. POST /api/events/choose ============
 export function chooseOption(req: Request, res: Response) {
-  const { requestId, snapshot, eventId, optionId } = req.body as ChooseOptionRequest;
+  const { requestId, snapshot, eventId, optionId } = (req.body ?? {}) as ChooseOptionRequest;
 
   if (!requestId || !snapshot || !eventId || !optionId) {
     return sendError(res, requestId || 'unknown', 'MISSING_PARAMS', 'Missing required params', false);
@@ -237,7 +225,7 @@ export function chooseOption(req: Request, res: Response) {
 
 // ============ 3. POST /api/endings/generate ============
 export async function generateEnding(req: Request, res: Response) {
-  const { requestId, snapshot, profile } = req.body as GenerateEndingRequest;
+  const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEndingRequest;
 
   if (!requestId || !snapshot) {
     return sendError(res, requestId || 'unknown', 'MISSING_PARAMS', 'Missing required params', false);
@@ -265,13 +253,10 @@ export async function generateEnding(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_PHASE', 'Current phase does not allow ending generation', false);
   }
 
-  if (!aiConfig) {
-    return sendError(res, requestId, 'AI_CONFIG_ERROR', 'AI config not loaded, check DEEPSEEK_API_KEY', false);
-  }
-
   const normalizedProfile = normalizeProfile(profile);
 
   try {
+    const aiConfig = loadAiConfig();
     const grades = getGrades(snapshot.attributes);
 
     const endingData = await aiGenerateEnding(
@@ -288,6 +273,7 @@ export async function generateEnding(req: Request, res: Response) {
     newSnapshot = {
       ...newSnapshot,
       phase: 'ended',
+      currentEvent: null,
       ending: {
         finalAttributes: { ...snapshot.attributes },
         grades,
