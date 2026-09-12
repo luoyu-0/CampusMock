@@ -10,6 +10,20 @@ export function Note({ children }: { children: ReactNode }) {
   return <div className="note">{children}</div>
 }
 
+/** 流式中间态的字：标题一次到齐、正文一段一段追加。等待卡和结算页下方共用这一段，保证两处观感一致。 */
+export function DraftText({ draft }: { draft: StreamDraft }) {
+  return (
+    <>
+      {draft.title && <h2 className="etitle">{draft.title}</h2>}
+      <div className="body typing">
+        {paragraphs(draft.description).map((text, index) => (
+          <p key={index}>{text}</p>
+        ))}
+      </div>
+    </>
+  )
+}
+
 /** ① 待生成事件：骨架屏 + 转圈，并且明说等待不消耗这一天。
     服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。 */
 export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
@@ -18,14 +32,7 @@ export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
     <div className="card">
       <p className="kicker">今天的日记</p>
       {shown ? (
-        <>
-          {shown.title && <h2 className="etitle">{shown.title}</h2>}
-          <div className="body typing">
-            {paragraphs(shown.description).map((text, index) => (
-              <p key={index}>{text}</p>
-            ))}
-          </div>
-        </>
+        <DraftText draft={shown} />
       ) : (
         <div className="skeleton">
           <div className="l" style={{ width: '52%', height: 20 }} />

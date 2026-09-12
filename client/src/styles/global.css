@@ -251,9 +251,11 @@ body{
 .wait .t{font-size:15px;color:var(--ink-soft)}
 .wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 
-/* 点完「继续写下一篇」，按钮塔成一条流光条。它不按比例走：我们并不知道模型写到哪了，
+/* 点完「继续写下一篇」，按钮塌成一条流光条。它不按比例走：我们并不知道模型写到哪了，
    假装进度比不装更糟，所以只做一条从左往右循环的笔尖光带，颜色借精力那颗的暖橙。 */
 .next{margin-top:18px}
+/* 服务端开始逐帧输出后，正在写的那一天的字直接长在流光条下面，等待画面就此被真字替掉。 */
+.streaming{margin-top:14px}
 .next .t{font-size:13.5px;color:var(--ink-soft);text-align:center;margin:0 0 10px}
 .next .bar{
   height:4px;border-radius:999px;background-color:var(--energy-soft);
