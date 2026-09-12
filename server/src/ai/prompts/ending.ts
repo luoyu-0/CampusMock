@@ -4,7 +4,7 @@ import { ENDING_TEXT_LIMITS } from "./values.js";
 
 // 提示词 v0.1.5：玩家档案可选，未收集时用中性表述；各版本改动见 docs/成员-C-AI.md 进度记录
 function suggestRange(limit: number): string {
-  return `${Math.ceil(limit * 0.65)}～${Math.floor(limit * 0.92)} 字`;
+  return `${Math.ceil(limit * 0.65)}～${Math.floor(limit * 0.90)} 字`;
 }
 
 const SYSTEM_PROMPT = `你是文字游戏《我的大学日记》的结局生成器。玩家刚结束入学两周（共 14 天）的模拟生活：每天经历 1 个事件并做出 1 次选择，学业、社交、精力、金钱四项属性随之变化。应用已按规则计算出四维最终值，并各自判定 A～D 档位（A 最高，D最低）。
