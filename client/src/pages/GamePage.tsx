@@ -13,7 +13,7 @@ export function GamePage({
 }: {
   snapshot: Snapshot
   busy: boolean
-  /** 请求在飞。只有结算页用它把按钮换成进度条；其余三态显示什么完全由 phase 决定。 */
+  /** 请求在飞。结算页用它把按钮换成流光条；`pendingEnding` 还用它区分「结尾正在写」与「等你点去写结尾」。 */
   waiting: boolean
   actions: GameActions
 }) {
@@ -21,6 +21,9 @@ export function GamePage({
   const day = chromeDay(history, phase)
   const lastEntry = history[history.length - 1]
   const isLastDay = history.length >= TOTAL_DAYS
+  /* 第 14 天结算后服务端与 mock 都直接返回 pendingEnding（不是 showResult），这一屏要同时吃两个 phase：
+     只有结尾请求真的在飞时才换成等待卡，否则必须把「去写结尾」摆出来——不然玩家面对的是一张没有控件的骨架屏。 */
+  const settledScreen = phase === 'showResult' || (phase === 'pendingEnding' && !waiting)
 
   return (
     <>
@@ -44,7 +47,7 @@ export function GamePage({
         </>
       )}
 
-      {phase === 'showResult' && lastEntry && (
+      {settledScreen && lastEntry && (
         <>
           <div className={waiting ? 'turning' : undefined}>
             <ResultCard entry={lastEntry} />
@@ -67,7 +70,7 @@ export function GamePage({
         </>
       )}
 
-      {phase === 'pendingEnding' && <EndingWaitingCard />}
+      {phase === 'pendingEnding' && waiting && <EndingWaitingCard />}
     </>
   )
 }
