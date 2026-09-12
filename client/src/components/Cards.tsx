@@ -76,30 +76,41 @@ export function EndingWaitingCard() {
   )
 }
 
-/** ② 待选择：选择前不出现任何数值效果（已确认规则）。 */
+/** 生成和选择共用一张卡片，终帧到达时保留标题、正文节点，只追加选项。 */
 export function EventCard({
   event,
+  day,
+  draft,
   disabled,
   onChoose,
 }: {
-  event: GameEvent
+  event: GameEvent | null
+  day: number
+  draft?: StreamDraft
   disabled: boolean
   onChoose: (optionId: string) => void
 }) {
   return (
     <div className="card">
-      <p className="kicker">{kickerLabel(event.day)}</p>
-      <h2 className="etitle">{event.title}</h2>
-      <div className="body">
-        {paragraphs(event.description).map((text, index) => (
+      <p className="kicker">{kickerLabel(day)}</p>
+      <h2 className="etitle">{event?.title ?? draft?.title ?? ''}</h2>
+      <div className={event ? 'body' : 'body typing'}>
+        {paragraphs(event?.description ?? draft?.description ?? '').map((text, index) => (
           <p key={index}>{text}</p>
         ))}
       </div>
-      <p className="ask">这时候你会——</p>
-      {event.options.map(option => {
+      {!event && (
+        <div className="wait" role="status">
+          <div className="spin" />
+          <p className="t">{draft && hasDraft(draft) ? '笔尖还在往下走……' : '台灯已经打开了，日记还在路上……'}</p>
+          <p className="s">等待不会消耗这一天</p>
+        </div>
+      )}
+      {event && <p className="ask">这时候你会——</p>}
+      {event?.options.map((option, index) => {
         const [line, motive] = splitOption(option.text)
         return (
-          <button className="opt" key={option.id} disabled={disabled} onClick={() => onChoose(option.id)}>
+          <button className="opt option-reveal" style={{ animationDelay: `${index * 160}ms` }} key={option.id} disabled={disabled} onClick={() => onChoose(option.id)}>
             {line}
             {motive && <small>{motive}</small>}
           </button>

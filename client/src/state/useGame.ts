@@ -248,7 +248,8 @@ export function useGame() {
         : screenOfPhase(snapshot)
 
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
-  const scene = sceneFor(day, screen)
+  // 生成完成后沿用同一天的背景，避免装饰层重挂载产生闪动。
+  const scene = sceneFor(day, screen === 'choice' ? 'generating' : screen)
   const storageBlocked = pendingSave !== null
 
   const startGame = useCallback(() => {
