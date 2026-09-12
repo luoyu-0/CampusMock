@@ -243,7 +243,9 @@ export function useGame() {
       : 'errFatal'
     : !entered || !snapshot
       ? 'start'
-      : screenOfPhase(snapshot)
+      : busy && snapshot.phase === 'showResult'
+        ? 'generating'
+        : screenOfPhase(snapshot)
 
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
   const scene = sceneFor(day, screen)

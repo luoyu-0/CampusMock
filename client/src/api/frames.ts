@@ -55,7 +55,8 @@ function parseLine(line: string): StreamFrame | null {
   }
   if (!value || typeof value !== 'object') return null
   const frame = value as Record<string, unknown>
-  return typeof frame.k === 'string' ? ({ k: frame.k, v: frame.v, i: frame.i } as StreamFrame) : null
+  // 终帧还包含 requestId、baseRevision、snapshot 或 error，必须完整交给状态机校验。
+  return typeof frame.k === 'string' ? (frame as unknown as StreamFrame) : null
 }
 
 /** 逐行解析器。网络切片不会照顾换行符，所以半行要留在缓冲区里等下一段。 */
