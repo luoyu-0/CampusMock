@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { chooseOption, generateEnding, generateEvent, setProfile } from '../api/gameApi'
+import { EMPTY_DRAFT, applyDraftFrame } from '../api/frames'
 import { DAY_SCRIPT, TOTAL_DAYS, initialSnapshot } from '../api/script'
 import { clearSnapshot, isSnapshot, loadSnapshot, saveSnapshot, STORAGE_KEY } from '../storage'
 import { clearProfile, loadProfile } from './profile'
+import type { FrameHandler, StreamDraft } from '../api/frames'
 import type { ApiError, ApiResult, GameEvent, Snapshot } from './types'
 import { isFailure } from './types'
 
@@ -16,7 +18,7 @@ export type ScreenKey =
   | 'errRetry'
   | 'errFatal'
 
-type ApiCall = (snapshot: Snapshot, requestId: string) => Promise<unknown>
+type ApiCall = (snapshot: Snapshot, requestId: string, onFrame: FrameHandler) => Promise<unknown>
 type ResumeAfterSave = 'none' | 'generateEvent' | 'generateEnding'
 
 interface PendingSave {
@@ -98,6 +100,8 @@ export function useGame() {
   const [entered, setEntered] = useState(false)
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null)
   const [recoveryRaw, setRecoveryRaw] = useState<string | null>(null)
+  /** 只在事件生成的那几秒存在：流式帧写进来的标题与正文草稿。不进快照、不进 localStorage。 */
+  const [draft, setDraft] = useState<StreamDraft>(EMPTY_DRAFT)
 
   const currentSnapshot = useRef<Snapshot | null>(null)
   const requestGeneration = useRef(0)
@@ -112,6 +116,7 @@ export function useGame() {
     requestGeneration.current += 1
     lastCall.current = null
     setBusy(false)
+    setDraft(EMPTY_DRAFT)
   }, [])
 
   const persistAndApply = useCallback(
@@ -134,15 +139,26 @@ export function useGame() {
       lastCall.current = { base, call }
       setBusy(true)
       setError(null)
+      setDraft(EMPTY_DRAFT)
+
+      /* 流式帧是在 await 期间一帧一帧进来的。请求一旦结束或者已经被更新的一次请求顶掉，
+         迟到的帧必须扔掉，否则上一天写了一半的字会串进下一天的等待屏。 */
+      let settled = false
+      const onFrame: FrameHandler = frame => {
+        if (settled || token !== requestGeneration.current) return
+        setDraft(prev => applyDraftFrame(prev, frame))
+      }
 
       let result: unknown
       try {
-        result = await call(base, requestId)
+        result = await call(base, requestId, onFrame)
       } catch {
         if (token !== requestGeneration.current) return null
         setBusy(false)
         setError({ code: 'NETWORK_ERROR', message: '暂时联系不上服务，当前进度没有改变。', retryable: true })
         return null
+      } finally {
+        settled = true
       }
 
       if (token !== requestGeneration.current) return null
@@ -227,7 +243,9 @@ export function useGame() {
       : 'errFatal'
     : !entered || !snapshot
       ? 'start'
-      : screenOfPhase(snapshot)
+      : busy && snapshot.phase === 'showResult'
+        ? 'generating'
+        : screenOfPhase(snapshot)
 
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
   const scene = sceneFor(day, screen)
@@ -362,6 +380,7 @@ export function useGame() {
     busy,
     error,
     scene,
+    draft,
     saveFailed: storageBlocked,
     canExportBrokenSave: recoveryRaw !== null,
     actions,

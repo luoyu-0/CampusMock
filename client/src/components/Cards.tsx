@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Effects, GameEvent, HistoryEntry } from '../state/types'
+import { hasDraft } from '../api/frames'
+import type { StreamDraft } from '../api/frames'
 import { kickerLabel } from '../state/calendar'
 import { deltaClass, formatDelta, paragraphs, splitOption } from '../format'
 
@@ -8,23 +10,46 @@ export function Note({ children }: { children: ReactNode }) {
   return <div className="note">{children}</div>
 }
 
-/** ① 待生成事件：骨架屏 + 转圈，并且明说等待不消耗这一天。 */
-export function EventWaitingCard() {
+/** 待生成事件页的流式草稿：标题一次到齐、正文一段一段追加。 */
+export function DraftText({ draft }: { draft: StreamDraft }) {
+  return (
+    <>
+      {draft.title && <h2 className="etitle">{draft.title}</h2>}
+      <div className="body typing">
+        {paragraphs(draft.description).map((text, index) => (
+          <p key={index}>{text}</p>
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** ① 待生成事件：骨架屏 + 转圈，并且明说等待不消耗这一天。
+    服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。 */
+export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
+  const shown = draft && hasDraft(draft) ? draft : null
   return (
     <div className="card">
       <p className="kicker">今天的日记</p>
-      <div className="skeleton">
-        <div className="l" style={{ width: '52%', height: 20 }} />
-        <div className="l" style={{ width: '100%' }} />
-        <div className="l" style={{ width: '96%' }} />
-        <div className="l" style={{ width: '88%' }} />
-      </div>
+      {shown ? (
+        <DraftText draft={shown} />
+      ) : (
+        <div className="skeleton">
+          <div className="l" style={{ width: '52%', height: 20 }} />
+          <div className="l" style={{ width: '100%' }} />
+          <div className="l" style={{ width: '96%' }} />
+          <div className="l" style={{ width: '88%' }} />
+        </div>
+      )}
       <div className="wait">
         <div className="spin" />
-        <p className="t">台灯已经打开了，日记还在路上……</p>
+        <p className="t">{shown ? '笔尖还在往下走……' : '台灯已经打开了，日记还在路上……'}</p>
         <p className="s">等待不会消耗这一天</p>
       </div>
-      <Note>「等待和重试不推进天数」是硬验收项，所以界面上要显式安抚，避免玩家反复点。</Note>
+      <Note>
+        「等待和重试不推进天数」是硬验收项，所以界面上要显式安抚，避免玩家反复点。
+        流式只改这一张卡的中间部分：终帧之前没有任何东西进存档，所以刷新、重试、切后台的行为都和原来一致。
+      </Note>
     </div>
   )
 }

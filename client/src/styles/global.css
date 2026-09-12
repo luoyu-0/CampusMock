@@ -236,6 +236,11 @@ body{
 .skeleton .l{height:13px;border-radius:6px;background:linear-gradient(90deg,#eef1f8,#e2e8f5,#eef1f8);
   background-size:200% 100%;animation:sh 1.4s infinite;margin-bottom:11px}
 @keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
+/* 流式写出时最后一行末尾跟一支笔尖。终帧一到整张卡换成真快照内容，笔尖自然消失。 */
+.typing p:last-child::after{content:"";display:inline-block;width:2px;height:1em;margin-left:3px;
+  vertical-align:-2px;background:var(--ink-soft);animation:cm-caret 1s infinite}
+@keyframes cm-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.typing p:last-child::after{animation:none}}
 .wait{text-align:center;padding:26px 0 10px}
 .wait .spin{
   width:52px;height:52px;margin:0 auto 16px;border-radius:50%;
@@ -246,9 +251,11 @@ body{
 .wait .t{font-size:15px;color:var(--ink-soft)}
 .wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 
-/* 点完「继续写下一篇」，按钮塔成一条流光条。它不按比例走：我们并不知道模型写到哪了，
+/* 点完「继续写下一篇」，按钮塌成一条流光条。它不按比例走：我们并不知道模型写到哪了，
    假装进度比不装更糟，所以只做一条从左往右循环的笔尖光带，颜色借精力那颗的暖橙。 */
 .next{margin-top:18px}
+/* 服务端开始逐帧输出后，正在写的那一天的字直接长在流光条下面，等待画面就此被真字替掉。 */
+.streaming{margin-top:14px}
 .next .t{font-size:13.5px;color:var(--ink-soft);text-align:center;margin:0 0 10px}
 .next .bar{
   height:4px;border-radius:999px;background-color:var(--energy-soft);
