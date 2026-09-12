@@ -66,6 +66,14 @@ export interface Snapshot {
   ending: Ending | null
 }
 
+/** 玩家档案。字段与成员 C 的 server/src/ai/schema.ts 同名同形，
+    随两个生成请求的顶层发出，不进快照结构。
+    gender 存中文词：提示词里的句式是「性别 ${gender}，专业 ${major}」，存 male 会直接打进中文句子。 */
+export interface PlayerProfile {
+  gender: string
+  major: string
+}
+
 export interface ApiError {
   code: string
   message: string

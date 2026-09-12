@@ -6,11 +6,11 @@ import type { ApiError, AttributeKey, ErrorResponse, GameEvent, Snapshot, Succes
 import { TOTAL_DAYS, advanceOneDay, eventForDay } from './script'
 import { buildEnding } from './ending'
 
-export type FaultKind = 'none' | 'retryable' | 'fatal'
+export type FaultKind = 'none' | 'retryable' | 'fatal' | 'fatalServer'
 
 let fault: FaultKind = 'none'
 
-/** 只有走查面板会调它：让下一次请求返回失败响应，用来验重试与不可重试两屏。 */
+/** 只有走查面板会调它：让下一次请求返回失败响应，用来验可重试、存档类不可重试、服务端类不可重试三屏。 */
 export function setFault(next: FaultKind) {
   fault = next
 }
@@ -54,16 +54,26 @@ function outOfRange(event: GameEvent): boolean {
 
 function injectedFault(requestId: string): ErrorResponse | null {
   if (fault === 'none') return null
-  const retryable = fault === 'retryable'
+  const kind = fault
   fault = 'none'
-  return retryable
-    ? fail(requestId, 'MODEL_TIMEOUT', '网络好像打了个盹，前面写好的内容都还在。', true)
-    : fail(
-        requestId,
-        'SNAPSHOT_VERSION_UNSUPPORTED',
-        '存档的版本和当前规则对不上。我没有改动它，也没有清空它——你之前的记录还在原处。',
-        false,
-      )
+  if (kind === 'retryable') {
+    return fail(requestId, 'MODEL_TIMEOUT', '网络好像打了个盹，前面写好的内容都还在。', true)
+  }
+  if (kind === 'fatalServer') {
+    // code 与文案都照抄真服务：成员 C 在密钥缺失时抛的就是这一句，retryable 也是 false。
+    return fail(
+      requestId,
+      'AI_CONFIG',
+      '缺少环境变量 DEEPSEEK_API_KEY，请在后端 .env 中配置（密钥不进入前端与存档）',
+      false,
+    )
+  }
+  return fail(
+    requestId,
+    'SNAPSHOT_VERSION_UNSUPPORTED',
+    '存档的版本和当前规则对不上。我没有改动它，也没有清空它——你之前的记录还在原处。',
+    false,
+  )
 }
 
 /** POST /api/events/generate */
