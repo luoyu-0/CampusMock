@@ -274,10 +274,10 @@ export function useGame() {
     dismissError() {
       lastCall.current = null
       setError(null)
-      // 待生成事件与待生成结局两态的界面是一张没有按钮的骨架屏，只清错误等于把玩家放进去干等。
-      // 这两态下退出要退回开始页，让玩家从「继续上次的日记」重新发起这一步。
-      const phase = currentSnapshot.current?.phase
-      if (phase === 'pendingEvent' || phase === 'pendingEnding') setEntered(false)
+      // 待生成事件那一态的界面是一张没有按钮的骨架屏，只清错误等于把玩家放进去干等，所以退出要退回开始页，
+      // 让玩家从「继续上次的日记」重新发起这一步。pendingEnding 不需要这个特例了：
+      // GamePage 在结尾请求没在飞时渲染的是第 14 篇结算页，那颗「去写结尾」就是这一步的重入口。
+      if (currentSnapshot.current?.phase === 'pendingEvent') setEntered(false)
     },
     restart: startGame,
     runFullWalk() {
