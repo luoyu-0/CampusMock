@@ -1,29 +1,28 @@
 # AI 内容生成模块（src/ai）
 
-《新生每日印象》的事件与结局生成模块（成员 C 负责）：构建提示词 → 调用 DeepSeek 兼容 API（JSON 输出模式）→ 运行时校验 → 返回结构化内容。无运行时依赖，仅使用 Node 内置 fetch。迭代与实测记录见 [成员C-开发过程.md](../../成员C-开发过程.md)。
+《我的大学日记》的事件与结局生成模块（成员 C 负责）：构建提示词 → 调用 DeepSeek 兼容 API（JSON 输出模式）→ 运行时校验 → 返回结构化内容。无运行时依赖，仅使用 Node 内置 fetch。迭代与实测记录见 [成员C-AI.md](../../docs/成员-C-AI.md)。
 
 ## 结构
 
 ```text
 server/
-├── package.json / tsconfig.json   # 模块独立开发用；并入完整后端时与路由层的配置合并
-├── scripts/
-│   ├── test-ai.ts                 # 验证脚本：--dry 不调 API 自测校验，test:event / test:ending 真实调用
-│   ├── test-retry.ts              # 检测与重试链路离线测试（本地假中转站，无需密钥与真实额度）
-│   ├── fake-relay.ts              # 本地假中转站（联调用）：invalid / hang / 401 三种故障模式，复现 AI 错误屏
-│   └── play.ts                    # CLI 跑完整一局（14+1 次调用），存档写入 CampusMock/saves/
+├── package.json / tsconfig.json   # 后端工作区共享配置（独立开发时代的专用 scripts 已不在这个检出里，见「自测命令」）
 └── src/ai/
     ├── index.ts                   # 唯一出口：路由层只从这里 import
-    ├── generateEvent.ts           # generateEvent / generateEventSafe：提示词 → 调用 → 校验 → 分配事件 id 与选项编号 A/B/C
+    ├── generateEvent.ts           # generateEvent / generateEventStream / generateEventSafe：提示词 → 调用 → 校验 → 分配事件 id 与选项编号 A/B/C（Stream 版边生成边回调推送增量）
     ├── generateEnding.ts          # generateEnding / generateEndingSafe：提示词 → 调用 → 校验 → 结局四字段
-    ├── deepseek.ts                # loadAiConfig（读 .env）+ chatJSON 请求封装 + chatJSONWithRetry 重试 + AiError
+    ├── deepseek.ts                # loadAiConfig（读 .env）+ chatJSON / chatJSONStream 请求封装 + chatJSONWithRetry 重试 + AiError
+    ├── streamParse.ts             # 流式增量解析：把模型输出的 JSON 文本实时切成标题与选项文本整体 / 描述增量 / 结果叙述增量（结构偏离自动休眠）
     ├── fallback.ts                # 备用内容：临时性故障重试耗尽时的兜底事件池与结局（数值字数合规）
     ├── validate.ts                # 输出校验：字段/长度/整数/效果范围，违规整体拒绝、不截断
     ├── schema.ts                  # 类型：四维属性、GameEvent、Ending、生成输入
-    └── prompts/
-        ├── event.ts / ending.ts   # 事件、结局的系统提示词（随实测迭代）
-        ├── common.ts              # 共用片段：属性标签、效果摘要、历史列表格式化
-        └── values.ts              # 硬性约束数值（选项数、字数上限、效果范围），提示词与校验共用，改数值只改这里
+    ├── prompts/
+    │   ├── event.ts / ending.ts   # 事件、结局的系统提示词（随实测迭代）
+    │   ├── common.ts              # 共用片段：属性标签、效果摘要、历史列表格式化
+    │   └── values.ts              # 硬性约束数值（选项数、字数上限、效果范围），提示词与校验共用，改数值只改这里
+    └── scripts/
+        ├── stream-parse-test.ts   # 流式解析器离线夹具测试：五种切块回归，零 API 依赖
+        └── stream-demo.ts         # 流式生成演示（本地备料不提交）：标题与选项整体 / 描述逐字 / 结果叙述逐字，兼验证中转站 stream 支持
 ```
 
 ## 接入到后端（成员 B）
@@ -54,7 +53,7 @@ const event = await generateEvent(
     day: snapshot.day,
     attributes: snapshot.attributes,
     history: historyFromRecords(snapshot.history),
-    profile, // 可选 PlayerProfile { gender, major }：可不传，未传时模型用中性表述（收集时机待与成员 C 约定）
+    profile, // 可选 PlayerProfile { gender, major }：不传时模型用中性表述（见下节「玩家档案」）
   },
   cfg,
 );
@@ -75,9 +74,15 @@ const ending = await generateEnding(
 
 接线路由只换生成来源，结算、幂等、快照组装逻辑都不用动；事件字段结构与前端完全一致（成员 A 已核对），前端无需改动。交接现场记录见成员 A 的 `docs/联调待办-B与C.md`。
 
+### 玩家档案（profile）
+
+生成输入（事件、结局皆同）带可选字段 `profile: { gender, major }`，类型 `PlayerProfile` 已从 ai 出口导出，用于让内容贴合玩家身份。不传时模型收到的用户消息是「玩家档案：未收集。请使用中性表述，不要假设玩家的性别与专业，也不要杜撰性别、专业等固定信息」，system 提示词另有硬约束：档案给出的性别与专业是玩家固定信息，不得更改、不得杜撰矛盾信息。
+
+档案不是快照的一部分（快照结构里没有该字段），模块对它只拼接进提示词、不做校验；怎么收集、怎么传到路由层由前端与路由层自行协商。自测：同一开局快照带/不带 profile 各生成一次第 1 天事件，两次 description 对性别与专业的贴合度应有明显差异，不带的那次不得出现具体性别或专业字样。
+
 ### 错误处理
 
-超时、限流、无效输出等可重试错误已在函数内自动重试（最多 `AI_MAX_ATTEMPTS` 次）：**校验失败会把问题清单注入下一次提示词让模型自纠**，最终失败才抛出；路由层按 `code` 映射到接口约定的错误响应。
+超时、限流、无效输出等可重试错误已在函数内自动重试（最多 `AI_MAX_ATTEMPTS` 次）：**校验失败会把问题清单注入下一次提示词让模型自纠**，最终失败才抛出；路由层按 `code` 映射到接口约定的错误响应。`message` 按《我的大学日记》的日记体玩家文风书写、句末括号带简短原因（如「心神不定，不知如何落笔（未配置API密钥）」「写着写着，笔没了墨（HTTP 502）」）——controller 对 `AiError` 是 `err.message` 原样透传上屏（仅 code 改名：`AI_CONFIG→AI_CONFIG_ERROR`、`AI_UPSTREAM→AI_UPSTREAM_ERROR`，其余原名），完整技术细节进 `console.warn`（`[ai]` 前缀）；唯一例外是 `AI_INVALID_OUTPUT`，它的 message 同时是注入下一轮提示词的自纠反馈，必须保持具体。
 
 ```ts
 try {
@@ -117,6 +122,25 @@ if (result.usedFallback) {
 const event = result.value; // 结构与 generateEvent 返回值一致
 ```
 
+### 流式生成（可选）
+
+`generateEventStream` 是 `generateEvent` 的流式版：对模型发 `stream: true`，描述与结果叙述逐字增量回调，标题与选项文本整体回调，最终返回值与 `generateEvent` 完全一致（同一套整体校验 + id 分配，重试语义也一致）。不需要流式就继续用 `generateEvent`，两版互不影响。
+
+```ts
+import { generateEventStream } from "../ai/index.js";
+
+const event = await generateEventStream(input, cfg, {
+  onRetry: (attempt) => {},                // 第 2 次尝试开始前触发：清空上一轮已显示内容（已打出的字无法撤回）
+  onTitle: (title) => {},                  // 标题闭合（整体一次）
+  onDescriptionDelta: (delta) => {},       // 描述增量（已反转义）
+  onOptionText: (index, text) => {},       // 选项文本整条弹出（index 0～2，A→B→C 依次）
+  onResultTextDelta: (index, delta) => {}, // 结果叙述增量（选完才看的叙述，可预取缓冲）
+  onResultText: (index, text) => {},       // 结果叙述闭合（完整）
+});
+```
+
+要点：回调推送的内容尚未通过最终校验，以最终返回的 `GameEvent` 为准；流式面为描述 / 结果叙述（逐字增量），标题与选项文本整体回调，effects 是结算数值不推送；resultText 是否提前展示由前端自行决定（可只缓冲所选选项）；流式中即时拦截提示词硬禁词（军训 / 期末）并带反馈重试；超时按「静默时长」计（沿用 `AI_TIMEOUT_MS`），模型持续出字不算超时；增量解析遇结构偏离自动休眠，正确性由整体校验兜底。转成 SSE 对外暴露的协议草案见 [成员C-AI.md](../../docs/成员-C-AI.md) 的「流式生成」一节。解析器离线回归（不调 API）：`npx tsx src/ai/scripts/stream-parse-test.ts`。演示脚本（本地备料）：`npx tsx src/ai/scripts/stream-demo.ts`。
+
 ### 职责边界
 
 本模块只做「输入快照 → 校验后的生成内容」的转换：不写存档、不改游戏进度；「快照已有未结算事件 / 已有结局则直接返回」的幂等判断由路由层完成。
@@ -135,15 +159,12 @@ const event = result.value; // 结构与 generateEvent 返回值一致
 
 ## 自测命令
 
-在 `server/` 下执行：
+仓库未配置 npm scripts，在 `server/` 下直接用 npx（先 `npm install` 装好 typescript 与 tsx）：
 
 ```bash
-npm install
-npm run typecheck     # 类型检查
-npm run test:dry      # 不调 API：合法样例通过、坏样例被整体拒绝
-npm run test:retry    # 不调真实 API：本地假中转站验证超时/重试/反馈/兜底全链路
-npm run fake:relay    # 起本地假中转站（联调复现错误屏用，见「失败样例复现」）
-npm run test:event    # 真实生成第 1 天事件
-npm run test:ending   # 真实生成结局（14 天完整历史样例）
-npm run play          # CLI 跑完整一局，存档写入 saves/（生成失败自动启用备用内容并提示）
+npx tsc --noEmit                             # 类型检查（无输出即通过）
+npx tsx src/ai/scripts/stream-parse-test.ts  # 流式解析器离线夹具：五种切块回归，不调 API
+npx tsx src/ai/scripts/stream-demo.ts        # 流式生成演示（本地备料，真实调用 API）
 ```
+
+整局试玩、假中转站等脚本（test-retry / fake-relay / play 等）为成员 C 本地备料，未随仓库上传（见「失败样例复现」一节的说明）。
