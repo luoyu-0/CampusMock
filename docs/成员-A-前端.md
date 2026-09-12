@@ -13,6 +13,7 @@
 - **接线换出来一个新的前置条件**：`controller.ts` 在没配 `DEEPSEEK_API_KEY` 时返回 `AI_CONFIG_ERROR` 且 `retryable: false`，界面停在**不可重试**屏。今晚实测确认呈现是「这本日记我读不懂 / AI config not loaded, check DEEPSEEK_API_KEY / 查看处理说明」，不是可重试那一屏（上一版这里写反了，已改）。顺带一条契约缺陷：`sendError` 的 message 是英文，而 `docs/接口约定.md:50` 要求提示用简体中文——#19 只把 AI 那条分支换成透传 `err.message`，其余仍是英文。
 - **本轮（2026-09-11 深夜）第三件事：正文排版整体改衬线**，走「纸质刊物」方向，单文件 `client/src/styles/global.css` +13/−8，分支 `feat/client-prose-serif` 已推、PR 待评审。逐条取值与两条踩过的坑见「已完成内容」最后一条。
 - **第四件事（2026-09-12 凌晨）：玩家档案对接**。成员 C 早在 `server/src/ai/schema.ts:54` 留了 `PlayerProfile { gender, major }`，提示词两侧也都有「传了就用、没传就走中性表述」的分支（`prompts/event.ts:48-50`、`prompts/ending.ts:52-54`），C 的 README 里那句「收集时机待与成员 C 约定」一直没人认领——**从路由层到界面这一段是空的**。前端这侧补齐：开始页开局问一次、单独一个 localStorage 键、随两个生成请求的顶层 `profile` 发出，共 6 个文件 +158/−15。**按负责人定的节奏没另开分支，与上面的字体改动合在 `feat/client-prose-serif` 同一个 PR**，代价是这个 PR 跨了两件事，评审可以按两个提交分开看。要说清楚：**这条链路目前端到端仍然无效**——`controller.ts:87` 只解构 `requestId, snapshot`，我发过去的 `profile` 会被直接丢弃（不报错、也不生效）。缺的是 B 那边两行，见待协作 23。
+- **第五件事（2026-09-12 凌晨）：把不可重试错误屏拆成两种**。对比最新 `main` 时发现上面那条「没配密钥会停在不可重试屏」的后果我之前只记了现象、没管呈现：那一屏的按钮与文案**整套都是围绕「本机存档坏了」写的**（查看处理说明 → 建议导出原始存档并检查浏览器是否允许本站使用本机存储），而 `AI_CONFIG` 这类服务端问题落到它上面，等于让玩家去查一个没坏的浏览器。更糟的是这一屏**没有任何出口**——顶栏只在 `retryable` 时渲染，按钮里没有导航，玩家只能刷新。现在按 `error.code` 是否在「存档类白名单」里分成两屏：存档类保持原样，其余不可重试错误给主按钮「先回到上一页」＋一句不误导的说明。顺手修掉一个我会继承到的老坑：`dismissError()` 在 `pendingEvent` / `pendingEnding` 两态只清错误，会把玩家送回一张**没有任何按钮的转圈骨架屏**（`EventWaitingCard` 里确实一个控件都没有），这两态下退出改为回开始页，从「继续上次的日记」重新发起。这条也并入 `feat/client-prose-serif` 同一个 PR。
 - 我这轮能独立做完的做完了。事实更新：`DEEPSEEK_API_KEY` 已配进本机 `.env`（不入库），PR #19 把 `loadAiConfig()` 挪到请求阶段（此前 `npm run dev:server` 因 cwd 在 `server/` 根本读不到根目录 `.env`），PR #17 让 `choose` 保留 `currentEvent`（`validateSnapshot` 的 `showResult` 分支要求它非空，前端不用改）。**剩下的**：`⑥⑦` 两个顶格态在屏幕上的实际折行仍需人眼过一遍；真实模型输出下的衬线观感没验过；真机局域网验收（D）。`README.md` 与 `Deploy.md` 由负责人维护，我没动。
 - 阻塞条件：`shared/` 公共类型归属仍未定（见待协作事项 1）。实测对过一遍表：我这边的 `client/src/state/types.ts` 与 B 的 `server/src/game/types.ts` **字段名与结构完全一致**，只有类型名不同（`GameEvent`↔`EventData`、`GameOption`↔`EventOption`、`HistoryEntry`↔`HistoryRecord`、`Ending`↔`EndingResult`），前端不需要改字段，定归属时按 B 的命名走即可。
 
@@ -70,7 +71,7 @@
 - **默认已经在打真后端**：`client/src/api/gameApi.ts` 按 `VITE_API_MODE` 分流，不设该变量时 `API_MODE === 'server'`，三个接口走 `/api/...` 相对路径（dev 由 Vite 代理到 3000，生产由 Express 直接托管 `client/dist`）。存档读写归成员 D 的 `client/src/storage/`，我这层不再持有任何存储实现。本地假 API 仍然存在，只在 `VITE_API_MODE=mock` 下生效，`setFault()` 失败注入也只在这条路上有效。
 - 假数据仍然是**模块内依赖，不是接口依赖**：`src/api/mockApi.ts` 那三个函数的签名一直没变（进一份快照、出一份响应），所以从假数据切到真接口时页面与状态机一行代码都没动，只是多了一个 `gameApi.ts` 适配层。留着的用处是给离线走查和失败注入用。
 - 非接口依赖：`client/design/assets/` 下 12 张 webp，合计 642 KB（两张主视觉 101 KB + 两侧远景 542 KB）。**素材刻意留在 `design/` 没搬进 `src/assets/`**：走查原型和产品代码引用同一批文件，避免两份素材各自漂移。构建时 Vite 照样能把它们发进 `dist/assets/` 并带上内容 hash。
-- 产物实测（2026-09-11，含本轮顶格夹具）：JS 285.11 KB（gzip 90.95 KB）、CSS 12.23 KB（gzip 3.67 KB）、12 张 webp 642 KB。首屏只请求当前主题的 2 张侧景，88~130 KB。**档案这轮之后**：JS 286.96 KB（gzip 91.73 KB）、CSS 13.45 KB（gzip 3.94 KB），增量是开始页那两个输入与归一逻辑，衬线那轮已另计在验证记录里。
+- 产物实测（2026-09-11，含本轮顶格夹具）：JS 285.11 KB（gzip 90.95 KB）、CSS 12.23 KB（gzip 3.67 KB）、12 张 webp 642 KB。首屏只请求当前主题的 2 张侧景，88~130 KB。**档案这轮之后**：JS 286.96 KB（gzip 91.73 KB）、CSS 13.45 KB（gzip 3.94 KB），增量是开始页那两个输入与归一逻辑，衬线那轮已另计在验证记录里。**错误屏拆分这轮之后**：JS 288.16 KB（gzip 92.12 KB）、CSS 不变 13.45 KB（gzip 3.94 KB），1.2 KB 全是两类新文案与第四颗注入按钮。
 - `PORT=3000` 取自 `.env.example`，只用在 Vite 的 `/api` 代理目标上。
 
 ## 待协作事项
@@ -137,6 +138,8 @@
     几个约定先说清楚，省得来回：**没填时那个键根本不出现**（不是 `null`、不是 `{}`），所以 `body.profile` 原样往下传就行，C 的提示词里「未收集 → 中性表述」分支会自动接住；**前端不用默认值、不猜、不填**，`gender` 只有「男」「女」两种取值、`major` 已被我限到 20 字且不含换行，直接拼进 C 的固定句式 `性别 ${gender}，专业 ${major}` 就是通顺中文。你要更严可以在服务端再校一遍长度——**自由文本进提示词这条残余风险我没法在界面侧消除**，只能限制体量：玩家自己写的话只影响他自己那一局，但如果你想干脆禁掉非中文之类，跟我说，前端改成受控下拉也很快。
     合完这一条，"事件与结局按玩家档案个性化"才算真的成立；在那之前这个 PR 的前端部分只是把数据送到门口。
 
+24. **`AI_CONFIG` 的错误文案是写给开发者看的，透传后会直接上屏**（给成员 B / C）。成员 C 在 `server/src/ai/deepseek.ts:37` 抛的是「缺少环境变量 `DEEPSEEK_API_KEY`，请在后端 `.env` 中配置（密钥不进入前端与存档）」，`:102` 那句是「模型服务鉴权失败，请检查 API 密钥与账户状态」；#19 把 `controller.ts` 的 AI 分支改成透传 `err.message` 之后，这两句会**原样出现在玩家界面上**（`ErrorCard` 直接渲染 `error.message`，我没加工）。方向我不替你们定，两个选项：① C 把 message 改成玩家能懂的一句，调试信息走 `console` 或日志；② 保持透传，B 在 controller 里给 `AI_CONFIG` 单独覆一句玩家文案、原文写进日志。我这边已经把这一类错误的**屏幕其余部分**改对了（见待协作下方的第五件事与验证记录：主按钮「先回到上一页」＋一句不误导的说明），所以不管你们选哪个，界面不用再动。演示现场如果有人故意拔密钥看这一屏，观众会看到 `.env` 这个词——先说一声，免得当成 bug。
+
 ## 验证记录
 
 - 验证方式：把原型装进固定宽度的同源 iframe，在 390 / 768 / 1280 三档下逐屏切换并用 `getBoundingClientRect()` 量测；本轮改为主页面直接量测 + 截图复核。
@@ -189,4 +192,8 @@
 - 结果（请求体形状）：源码级断言两处生成请求都走 `bodyWithProfile`，而 `/api/events/choose` 的字面量 `{ requestId, snapshot, eventId, optionId }` 未被改动（结算不调模型，所以不带档案）；产物探针在 `dist` 里搜到 `campusmock:profile`、「你的专业」、「不填」，说明存储键与开始页表单都没被摇掉。构建：JS 286.96 KB（gzip 91.73）、CSS 13.45 KB（gzip 3.94）。
 - 结果（确认不会撞服务端）：`server/src/index.ts:21` 只有 `express.json({ limit: '1mb' })`，全仓库 grep 不到对请求体键名的白名单校验；`validateSnapshot` 与 D 的 `isSnapshot` 都是逐字段判已知字段。所以 B 接线之前，这份多带一个 `profile` 的请求照样能正常走完全程（静态核对，未打真请求）。
 - **未做（如实记）**：新表单在 390 窄屏与 1440 桌面档的实际观感**没有截图核对**（本机权限拦着浏览器），输入框聚焦态、胶囊选中态、`aria-pressed` 的读屏表现只做到代码级；B 接线之后"日记真的按专业写了内容"这条更无从验起。
+- 验证方式（错误屏拆分这轮）：本机起不了浏览器，改用 `react-dom/server` 的 `renderToStaticMarkup` 把 `ErrorPage` 按不同 `error.code` 静态渲染出 HTML，再对可见文案与按钮做断言（一次性脚本 `client/tmp-error-render.mts`，跑完即删、未入库）。这条路比读代码可靠：它走的是组件真实分支，只是没有样式。
+- 结果（14 条断言全通）：`AI_CONFIG` / `STAGE_MISMATCH` 这类**未列举的服务端 code** 默认落到新的生成类屏（有「先回到上一页」、hint 是「这一步没有写入…」、无「清除坏档」）；`SNAPSHOT_VERSION_UNSUPPORTED` / `STORAGE_UNAVAILABLE` 仍落在旧的存档屏（导出+清除坏档、hint 未变、不出现「先回到上一页」）；`SAVE_CHANGED_IN_ANOTHER_TAB` 与可重试屏**逐字未变**。断言里排掉了一条假阳性：一开始拿「本机存储」那句话做判据，结果两个 FAIL —— 它在折叠的处理说明里，`showHelp` 初始为 `false` 时根本不渲染，改成断言始终渲染的 `hint`。
+- 结果（新的不可重试屏能离线演）：`mockApi` 的 `FaultKind` 加 `'fatalServer'`，走查面板第四颗按钮「下次请求·服务端不可重试」返回 `AI_CONFIG` + `retryable: false` + **成员 C 原文照抄的 message**，与真链路同一屏；原来那颗 `fatal` 保持注入存档类 code，两屏现在分开可看。顺带把两颗按钮的标签改成「存档不可重试 / 服务端不可重试」，否则同名按钮指向不同屏。
+- **未做（如实记）**：① 折叠的「处理说明」两套新文案只在源码分支里对，SSR 翻不动 `useState`，没有实际渲染出来核对；② `dismissError()` 在 `pendingEvent` / `pendingEnding` 下回开始页这条是**读代码确定的**（`screen` 的三元式 `!entered || !snapshot → 'start'`，`StartPage` 在有存档时给「继续上次的日记（第 N 天）」，点它走 `resume → stepFrom` 会重新发起这一步），但没在浏览器里点过；③ 两屏的实际观感与 390 档折行仍未截图。
 - 仍存在的问题：深色模式没做（不在本轮范围）；动效只确认在跑，低端局域网设备上的帧率没测；`⑥⑦` 的观感待人眼确认（上一条）；模型接线后如果 C 放宽 `TEXT_LIMITS`（注释里写着"草案值，实测后调整"），顶格夹具要跟着改一次上限，两处数字都在 `server/src/ai/prompts/values.ts`，别在夹具里写死第二次。**真实模型输出今晚才第一次可达**：密钥已配进本机 `.env`，PR #19 又把 `loadAiConfig()` 从模块初始化挪到请求阶段——在那之前 `npm run dev:server` 因为 cwd 落在 `server/`，永远读不到根目录 `.env`，无论密钥对不对都报 `AI_CONFIG_ERROR`。**但衬线排版在真实字量下的观感还没肉眼过一遍**，这是字体这条唯一剩下的未验证项。**新增一条同病相怜的**：玩家档案的前端部分已经做完并推上去了，但在成员 B 接上待协作 23 那两行之前，它对生成内容的影响是零——别把"界面能填"当成"档案已生效"。
