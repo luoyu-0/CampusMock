@@ -241,26 +241,42 @@ body{
   vertical-align:-2px;background:var(--ink-soft);animation:cm-caret 1s infinite}
 @keyframes cm-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.typing p:last-child::after{animation:none}}
+/* 流式刚到的一行不是"亮"出来的，是"洇"出来的：从略小、略糊里长回原样。
+   原点靠左，前面已经写好的字才不会跟着往中间缩；transform 要 inline-block 才吃。 */
+.ink-in{display:inline-block;transform-origin:left center;animation:cm-ink-in .42s ease-out both}
+@keyframes cm-ink-in{from{opacity:.2;filter:blur(2px);transform:scale(.8)}to{opacity:1;filter:blur(0);transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.ink-in{animation:none}}
 .wait{text-align:center;padding:26px 0 10px}
 /* 等生成时的那支笔。动效只有位移与透明度——转圈换掉的理由是它和「写日记」毫无关系。
-   四个周期 2.8 / 2.6 / 6.5 / 9 互不成整数倍，盯久了不会看出一拍一拍的循环感。 */
+   书写那一圈 12 秒：笔走、两道墨迹的 dashoffset、抬笔换行用的是**同一组百分比**，
+   所以墨迹的尽头始终压在笔尖底下；对不上就会出现"字写完了笔还在别处"的假。 */
 .wait .pen{display:block;width:158px;height:auto;margin:0 auto 14px;overflow:visible}
 /* 纸色与横线沿用背景漂浮纸页那两个色值，同一屏里不能出现两种纸 */
 .wait .pen .pn-paper{fill:#fffdf7;stroke:rgba(120,110,92,.16);stroke-width:1}
 .wait .pen .pn-rule{fill:none;stroke:rgba(120,110,92,.2);stroke-width:1.2}
-.wait .pen .pn-ink{
-  fill:none;stroke:var(--brand);stroke-width:3;stroke-linecap:round;
-  stroke-dasharray:100;stroke-dashoffset:100;
-  animation:cm-pen-ink 6.5s ease-in-out infinite;
-}
-.wait .pen .pn-glow{fill:url(#cm-pen-warm);transform-box:fill-box;transform-origin:center;animation:cm-pen-glow 2.8s ease-in-out infinite}
+.wait .pen .pn-ink{fill:none;stroke:var(--brand);stroke-width:3;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100}
+.wait .pen .pn-ink1{animation:cm-pen-ink1 12s ease-in-out infinite}
+.wait .pen .pn-ink2{animation:cm-pen-ink2 12s ease-in-out infinite}
+/* 写完两行 → 整页淡掉 → 换一张白纸。淡掉必须有：不淡就会在满格处硬跳回空白，那一下最扎眼。 */
+.wait .pen .pn-written{animation:cm-pen-page 12s ease-in-out infinite}
+/* 纸边 1px 的慢浮动放在最外层，墨迹跟着纸一起浮，不会浮出"字飘在纸上"的错位。 */
+.wait .pen .pn-sheet{animation:cm-pen-sheet 7.5s ease-in-out infinite}
+.wait .pen .pn-glow{fill:url(#cm-pen-warm);transform-box:fill-box;transform-origin:center;animation:cm-pen-glow 3.4s ease-in-out infinite}
 .wait .pen .pn-wet{fill:url(#cm-pen-wet);transform-box:fill-box;transform-origin:center;animation:cm-pen-wet 3.6s ease-out infinite}
-.wait .pen .pn-hand{animation:cm-pen-hand 9s ease-in-out infinite alternate}
-.wait .pen .pn-nib{animation:cm-pen-nib 2.6s ease-in-out infinite}
+/* 四层各自只管一个属性，互不打架：走纸 → 换行 → 抬笔 → 浮动。 */
+.wait .pen .pn-hand{animation:cm-pen-hand 12s ease-in-out infinite}
+.wait .pen .pn-line{animation:cm-pen-line 12s ease-in-out infinite}
+.wait .pen .pn-lift{animation:cm-pen-lift 12s ease-in-out infinite}
+.wait .pen .pn-tip{animation:cm-pen-bob 2.6s ease-in-out infinite}
 .wait .pen .pn-body{fill:url(#cm-pen-metal);stroke:rgba(90,100,120,.32);stroke-width:.8}
 .wait .pen .pn-holder{fill:#9aa5b7}
 .wait .pen .pn-slit{stroke:rgba(60,70,90,.5);stroke-width:1.1;stroke-linecap:round}
 .wait .pen .pn-hole{fill:#fffdf7}
+/* 两片叶子从纸上方飘下来，半透明、极慢、一路自转。它们在纸外面飘，所以不在 .pn-sheet 里。 */
+.wait .pen .pn-leaf{animation:cm-pen-fall 15s linear infinite}
+.wait .pen .pn-leaf2{animation-duration:21s;animation-delay:-9s}
+.wait .pen .pn-blade{fill:var(--energy);opacity:.3;transform-box:fill-box;transform-origin:center;animation:cm-pen-turn 9s ease-in-out infinite}
+.wait .pen .pn-blade2{animation-duration:13s;animation-direction:reverse}
 .wait .pen .mt-1{stop-color:#f0f4fa}
 .wait .pen .mt-2{stop-color:#c2ccdc}
 .wait .pen .mt-3{stop-color:#8a94a7}
@@ -269,19 +285,63 @@ body{
 .wait .pen .wm-2{stop-color:var(--energy);stop-opacity:0}
 .wait .pen .wt-1{stop-color:var(--brand);stop-opacity:.45}
 .wait .pen .wt-2{stop-color:var(--brand);stop-opacity:0}
-@keyframes cm-pen-glow{0%,100%{opacity:.45;transform:scale(.9)}50%{opacity:1;transform:scale(1.12)}}
-@keyframes cm-pen-nib{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+/* 呼吸：0.6 ↔ 1，3.4 秒一轮，按用户要的是"环境在喘气"而不是"灯在闪"。 */
+@keyframes cm-pen-glow{0%,100%{opacity:.6;transform:scale(.94)}50%{opacity:1;transform:scale(1.1)}}
+/* 纸边浮动只有 1px：再多就成了"纸在抖"。 */
+@keyframes cm-pen-sheet{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
+/* 笔尖自己的轻微起伏，和书写位移分在两层，所以两者可以叠加。 */
+@keyframes cm-pen-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.6px)}}
+/* 走纸：三段快写 + 两次顿住（22%~30% 那一下几乎不动，是"想半句"），最后一段长扫收尾。 */
+@keyframes cm-pen-hand{
+  0%{transform:translateX(-78px)}8%{transform:translateX(-42px)}12%{transform:translateX(-37px)}
+  18%{transform:translateX(-3px)}22%{transform:translateX(-2px)}30%{transform:translateX(0)}
+  34%{transform:translateX(42px)}40%{transform:translateX(42px)}49%{transform:translateX(-78px)}
+  52%{transform:translateX(-78px)}58%{transform:translateX(-50px)}62%{transform:translateX(-48px)}
+  68%{transform:translateX(-20px)}72%{transform:translateX(-19px)}78%{transform:translateX(-16px)}
+  84%{transform:translateX(2px)}88%{transform:translateX(2px)}94%,100%{transform:translateX(-78px)}
+}
+/* 换行落到的那条横线：18 用户单位刚好是两根横线之间的间距。 */
+@keyframes cm-pen-line{0%,42%{transform:translateY(0)}46%,90%{transform:translateY(18px)}94%,100%{transform:translateY(0)}}
+/* 「抬笔—向左平移—轻轻落笔」：这条只负责抬起来那 7 单位，左右交给 .pn-hand，落回交给时序错开的一拍。 */
+@keyframes cm-pen-lift{0%,40%{transform:translateY(0)}43%,49%{transform:translateY(-7px)}52%,84%{transform:translateY(0)}88%,94%{transform:translateY(-7px)}98%,100%{transform:translateY(0)}}
+/* 第一行墨迹：笔走到哪，墨就补到哪（100 − 走了的百分比）。 */
+@keyframes cm-pen-ink1{
+  0%{stroke-dashoffset:100}8%{stroke-dashoffset:70}12%{stroke-dashoffset:66}
+  18%{stroke-dashoffset:38}22%{stroke-dashoffset:37}30%{stroke-dashoffset:35}
+  34%,86%{stroke-dashoffset:0}90%,100%{stroke-dashoffset:100}
+}
+/* 第二行短一截，落笔点同在第一格，所以同一条换算式换成除以 80。 */
+@keyframes cm-pen-ink2{
+  0%,52%{stroke-dashoffset:100}58%{stroke-dashoffset:65}62%{stroke-dashoffset:62}
+  68%{stroke-dashoffset:28}72%{stroke-dashoffset:26}78%{stroke-dashoffset:22}
+  84%,86%{stroke-dashoffset:0}90%,100%{stroke-dashoffset:100}
+}
+@keyframes cm-pen-page{0%,84%{opacity:.55}87%{opacity:0}97%,100%{opacity:0}}
 /* 墨点从笔尖底下摊开再消失，像水滴落到纸上那一下 */
 @keyframes cm-pen-wet{0%{opacity:.5;transform:scale(.45)}70%{opacity:.14;transform:scale(1.35)}100%{opacity:0;transform:scale(1.7)}}
-/* 写完 → 停一下 → 淡掉再重来。淡掉是必须的：不淡就会在满格处硬跳回空白，那一下最扎眼。 */
-@keyframes cm-pen-ink{0%{stroke-dashoffset:100;opacity:0}10%{opacity:.55}72%{stroke-dashoffset:0;opacity:.55}100%{stroke-dashoffset:0;opacity:0}}
-@keyframes cm-pen-hand{from{transform:translateX(-5px)}to{transform:translateX(5px)}}
+/* 落到底之前先淡掉：不淡的话循环点那一下"树叶凭空出现在纸上方"比飘本身更显眼。 */
+@keyframes cm-pen-fall{
+  0%{opacity:0;transform:translate(0,-10px)}14%{opacity:1;transform:translate(6px,10px)}
+  38%{opacity:1;transform:translate(-4px,32px)}62%{opacity:1;transform:translate(8px,54px)}
+  84%{opacity:.7;transform:translate(1px,72px)}100%{opacity:0;transform:translate(5px,86px)}
+}
+@keyframes cm-pen-turn{from{transform:rotate(0)}to{transform:rotate(200deg)}}
+/* 思考态：笔停在原处，只剩点触；走纸、换行、墨迹全部冻住（不是撤掉，撤了会瞬移回原位）。 */
+.pen.is-thinking .pn-hand,.pen.is-thinking .pn-line,.pen.is-thinking .pn-lift,
+.pen.is-thinking .pn-ink1,.pen.is-thinking .pn-ink2,.pen.is-thinking .pn-written{animation-play-state:paused}
+.pen.is-thinking .pn-tip{animation:cm-pen-tap 1.1s ease-in-out infinite}
+.pen.is-thinking .pn-glow{animation:cm-pen-flicker 1.1s ease-in-out infinite}
+@keyframes cm-pen-tap{0%,100%{transform:translateY(0)}30%{transform:translateY(-3.4px)}55%{transform:translateY(.4px)}}
+@keyframes cm-pen-flicker{0%,100%{opacity:.62;transform:scale(.95)}28%{opacity:1;transform:scale(1.14)}60%{opacity:.72;transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){
-  .wait .pen .pn-ink,.wait .pen .pn-glow,.wait .pen .pn-wet,
-  .wait .pen .pn-hand,.wait .pen .pn-nib{animation:none}
-  .wait .pen .pn-ink{stroke-dashoffset:0;opacity:.5}
+  .wait .pen .pn-ink,.wait .pen .pn-glow,.wait .pen .pn-wet,.wait .pen .pn-written,
+  .wait .pen .pn-sheet,.wait .pen .pn-hand,.wait .pen .pn-line,.wait .pen .pn-lift,
+  .wait .pen .pn-tip,.wait .pen .pn-leaf,.wait .pen .pn-blade{animation:none}
+  .wait .pen .pn-ink1,.wait .pen .pn-ink2{stroke-dashoffset:40}
+  .wait .pen .pn-written{opacity:.55}
   .wait .pen .pn-glow{opacity:.85}
   .wait .pen .pn-wet{opacity:.22}
+  .wait .pen .pn-leaf{display:none}
 }
 .wait .t{font-size:15px;color:var(--ink-soft)}
 .wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}

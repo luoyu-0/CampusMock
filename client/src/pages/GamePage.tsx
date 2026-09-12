@@ -11,6 +11,7 @@ export function GamePage({
   busy,
   waiting,
   draft,
+  thinking = false,
   actions,
 }: {
   snapshot: Snapshot
@@ -19,6 +20,8 @@ export function GamePage({
   waiting: boolean
   /** 流式草稿只用于待生成事件页。 */
   draft?: StreamDraft
+  /** 上一帧已经等了一会儿：笔尖改成原地点触。 */
+  thinking?: boolean
   actions: GameActions
 }) {
   const { history, currentEvent } = snapshot
@@ -40,7 +43,7 @@ export function GamePage({
         dots={day}
       />
 
-      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} />}
+      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} thinking={thinking} />}
 
       {phase === 'pendingChoice' && currentEvent && (
         <>

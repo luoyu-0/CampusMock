@@ -10,15 +10,34 @@ export function Note({ children }: { children: ReactNode }) {
   return <div className="note">{children}</div>
 }
 
-/** 待生成事件页的流式草稿：标题一次到齐、正文一段一段追加。 */
+/** 待生成事件页的流式草稿：标题一次到齐、正文一段一段追加。
+    刚到的那几个字包一层 .ink-in（洇墨：略小略糊 → 长回原样），key 换一次就重放一次动画；
+    段落是按整篇文本切的，所以 chunk 结尾正好落在换行上时拿不到尾巴，那就按原样渲染，宁可不动画也不能掉字。 */
 export function DraftText({ draft }: { draft: StreamDraft }) {
+  const parts = paragraphs(draft.description)
+  const lastIndex = parts.length - 1
   return (
     <>
-      {draft.title && <h2 className="etitle">{draft.title}</h2>}
+      {draft.title && (
+        <h2 className="etitle">
+          <span className="ink-in">{draft.title}</span>
+        </h2>
+      )}
       <div className="body typing">
-        {paragraphs(draft.description).map((text, index) => (
-          <p key={index}>{text}</p>
-        ))}
+        {parts.map((text, index) => {
+          const fresh =
+            index === lastIndex && draft.fresh && text.endsWith(draft.fresh) ? draft.fresh : null
+          return (
+            <p key={index}>
+              {fresh ? text.slice(0, text.length - fresh.length) : text}
+              {fresh && (
+                <span className="ink-in" key={draft.chunk}>
+                  {fresh}
+                </span>
+              )}
+            </p>
+          )
+        })}
       </div>
     </>
   )
@@ -26,11 +45,13 @@ export function DraftText({ draft }: { draft: StreamDraft }) {
 
 /** 等生成时的那支笔，替掉转圈圈：米黄纸、淡横线、金属笔尖落在纸上，暖光呼吸，蓝墨迹沿横线缓慢延伸。
     只有形状在这里——颜色、节奏、全部动效都在 global.css 的 `.wait .pen` 一节，改观感不用回这个文件。
-    渐变色的 stop 同样只挂 class、颜色交给 CSS：连渐变的每一档色值也留在 global.css 那一块，改配色不用碰这个文件。
+    渐变的每一档色值同样留在 global.css，改配色不用碰这个文件。
+    四层嵌套各管一个属性（走纸 → 换行 → 抬笔 → 浮动），因为同一个元素上两条动画会互相顶掉。
+    thinking 只加一个类名：冻住书写、笔尖原地点触、光晕跟着闪，动效全在 CSS 里分岔。
     aria-hidden 是因为旁边那句「笔尖还在往下走」才是给读屏的状态文字，这幅画只是它的重复。 */
-export function PenRest() {
+export function PenRest({ thinking = false }: { thinking?: boolean }) {
   return (
-    <svg className="pen" viewBox="0 0 180 108" aria-hidden="true">
+    <svg className={thinking ? 'pen is-thinking' : 'pen'} viewBox="0 0 180 108" aria-hidden="true">
       <defs>
         <linearGradient id="cm-pen-metal" x1="0" y1="0" x2="1" y2="0">
           <stop className="mt-1" offset="0" />
@@ -48,23 +69,48 @@ export function PenRest() {
         </radialGradient>
       </defs>
 
-      <rect className="pn-paper" x="10" y="10" width="160" height="88" rx="9" />
-      <path className="pn-rule" d="M24 36H156" />
-      <path className="pn-rule" d="M24 54H156" />
-      <path className="pn-rule" d="M24 72H156" />
-      <path className="pn-rule" d="M24 90H118" />
+      <g className="pn-leaf">
+        <path className="pn-blade" d="M36 2c5 2 7 7 5 12-2 5-8 6-11 3-3-4 0-10 6-15z" />
+      </g>
+      <g className="pn-leaf pn-leaf2">
+        <path className="pn-blade pn-blade2" d="M148 0c4 2 6 6 4 10-2 4-7 5-9 2-2-3 0-8 5-12z" />
+      </g>
 
-      {/* pathLength=100 把这条线归一化，CSS 里的虚线偏移就能写成百分比，不必去量真实长度 */}
-      <path className="pn-ink" pathLength={100} d="M30 72c11-5 21 4 32-1 9-4 17 3 25-1 8-3 15 3 21 0" />
+      <g className="pn-sheet">
+        <rect className="pn-paper" x="10" y="10" width="160" height="88" rx="9" />
+        <path className="pn-rule" d="M24 36H156" />
+        <path className="pn-rule" d="M24 54H156" />
+        <path className="pn-rule" d="M24 72H156" />
+        <path className="pn-rule" d="M24 90H118" />
+
+        {/* pathLength=100 把这两条线归一化，CSS 里的虚线偏移就能写成百分比，不必去量真实长度。
+            终点 (150 70) 与 (110 88) 是笔尖走纸的两个端点，改动线形要连着改 cm-pen-hand 的百分比。 */}
+        <g className="pn-written">
+          <path
+            className="pn-ink pn-ink1"
+            pathLength={100}
+            d="M30 70 C42 65 54 75 66 70 C78 65 90 75 102 70 C114 65 126 75 138 70 C142 68 146 69 150 70"
+          />
+          <path
+            className="pn-ink pn-ink2"
+            pathLength={100}
+            d="M30 88 C40 83 50 93 60 88 C70 83 80 93 90 88 C96 85 104 90 110 88"
+          />
+        </g>
+      </g>
 
       <g className="pn-hand">
-        <circle className="pn-glow" cx="108" cy="70" r="17" />
-        <ellipse className="pn-wet" cx="108" cy="73" rx="7" ry="3.4" />
-        <g className="pn-nib">
-          <rect className="pn-holder" x="99" y="20" width="18" height="15" rx="4" />
-          <path className="pn-body" d="M108 70c-7-12-9-24-8-35h16c1 11-1 23-8 35z" />
-          <path className="pn-slit" d="M108 63V44" />
-          <circle className="pn-hole" cx="108" cy="41" r="2.8" />
+        <g className="pn-line">
+          <g className="pn-lift">
+            <g className="pn-tip">
+              <circle className="pn-glow" cx="108" cy="70" r="17" />
+              <ellipse className="pn-wet" cx="108" cy="73" rx="7" ry="3.4" />
+              <rect className="pn-holder" x="99" y="20" width="18" height="15" rx="4" />
+              <path className="pn-body" d="M108 70c-7-12-9-24-8-35h16c1 11-1 23-8 35z" />
+              <path className="pn-slit" d="M108 63V44" />
+              <circle className="pn-hole" cx="108" cy="41" r="2.8" />
+            </g>
+          </g>
         </g>
       </g>
     </svg>
@@ -72,8 +118,15 @@ export function PenRest() {
 }
 
 /** ① 待生成事件：骨架屏 + 笔尖，并且明说等待不消耗这一天。
-    服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。 */
-export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
+    服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。
+    thinking 是"上一帧到现在已经等了一会儿"，由状态机算，这里只负责换个说法。 */
+export function EventWaitingCard({
+  draft,
+  thinking = false,
+}: {
+  draft?: StreamDraft
+  thinking?: boolean
+}) {
   const shown = draft && hasDraft(draft) ? draft : null
   return (
     <div className="card">
@@ -89,8 +142,14 @@ export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
         </div>
       )}
       <div className="wait">
-        <PenRest />
-        <p className="t">{shown ? '笔尖还在往下走……' : '台灯已经打开了，日记还在路上……'}</p>
+        <PenRest thinking={thinking} />
+        <p className="t">
+          {!shown
+            ? '台灯已经打开了，日记还在路上……'
+            : thinking
+              ? '笔尖停了一下，在想下一句……'
+              : '笔尖还在往下走……'}
+        </p>
         <p className="s">等待不会消耗这一天</p>
       </div>
       <Note>
@@ -107,7 +166,8 @@ export function EndingWaitingCard() {
     <>
       <div className="card">
         <div className="wait">
-          <PenRest />
+          {/* 结局这一路服务端没有逐帧接口，永远收不到帧，所以笔尖一直停在"想"的状态是实话。 */}
+          <PenRest thinking />
           <p className="t">十四天的日记摊在桌上，正在为你写结尾……</p>
           <p className="s">属性已经锁定，这一步只重试结局，不会重做第 14 天</p>
         </div>
