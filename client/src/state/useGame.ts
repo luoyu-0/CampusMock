@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { chooseOption, generateEnding, generateEvent } from '../api/gameApi'
+import { chooseOption, generateEnding, generateEvent, setProfile } from '../api/gameApi'
 import { DAY_SCRIPT, TOTAL_DAYS, initialSnapshot } from '../api/script'
 import { clearSnapshot, isSnapshot, loadSnapshot, saveSnapshot, STORAGE_KEY } from '../storage'
+import { clearProfile, loadProfile } from './profile'
 import type { ApiError, ApiResult, GameEvent, Snapshot } from './types'
 import { isFailure } from './types'
 
@@ -189,6 +190,8 @@ export function useGame() {
   )
 
   useEffect(() => {
+    // 档案不进快照，所以刷新后要继续这一局时必须先把它交回适配层，否则结局那次生成就丢了档案
+    setProfile(loadProfile())
     const loaded = loadSnapshot()
     if (loaded.kind === 'ok') {
       applySnapshot(loaded.snapshot)
@@ -310,6 +313,8 @@ export function useGame() {
         setError(STORAGE_UNAVAILABLE)
         return
       }
+      clearProfile()
+      setProfile(null)
       setPendingSave(null)
       setRecoveryRaw(null)
       setError(null)
@@ -337,6 +342,8 @@ export function useGame() {
         setError(STORAGE_UNAVAILABLE)
         return
       }
+      clearProfile()
+      setProfile(null)
       setPendingSave(null)
       setRecoveryRaw(null)
       setError(null)

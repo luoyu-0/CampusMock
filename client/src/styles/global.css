@@ -307,6 +307,27 @@ body{
 .hero .sub{font-size:14.5px;color:var(--ink-soft);margin:0 0 4px}
 .hero .desc{font-size:13.5px;color:var(--ink-faint);margin:16px auto 24px;max-width:330px;line-height:1.85}
 
+/* 玩家档案：只在开局问一次。整块锁在 330px 与 .desc 同宽，开始页就不会出现两种栏宽。
+   输入框字号 16px 是有意的：小于 16px 时移动端浏览器会在聚焦时把整页放大。 */
+.pf{max-width:330px;margin:0 auto 22px;text-align:left}
+.pf .q{font-size:13.5px;color:var(--ink-soft);margin:0 0 7px}
+.pf input{
+  display:block;width:100%;font:inherit;font-size:16px;color:var(--ink);
+  padding:11px 13px;margin-bottom:16px;
+  border:1px solid var(--line);border-radius:12px;background:var(--paper);
+}
+.pf input::placeholder{color:var(--ink-faint)}
+.pf input:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.pf .chips{display:flex;gap:8px}
+.pf .chip{
+  font:inherit;font-size:14px;color:var(--ink-soft);
+  padding:9px 18px;border:1px solid var(--line);border-radius:999px;
+  background:var(--paper);cursor:pointer;
+}
+.pf .chip[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-deep);font-weight:600}
+.pf .tip{font-size:12px;line-height:1.65;color:var(--ink-faint);margin:8px 0 18px}
+.pf-who{font-size:12.5px;color:var(--ink-faint);text-align:center;margin:12px 0 0}
+
 /* 桌面端：只把两处插画放大。窄栏保持 560px，否则 350 字的事件卡会拉成一行四十多字的长句。
    插画用 margin-left:50% + translateX(-50%) 对称溢出窄栏，宽度上限锁在 92vw 内，不会撑出横向滚动条。 */
 @media (min-width:768px){
