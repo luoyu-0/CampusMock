@@ -1,6 +1,8 @@
 import { Chrome, HistoryList, chromeDay, chromeTitle } from '../components/Chrome'
-import { EndingWaitingCard, EventCard, EventWaitingCard, ResultCard } from '../components/Cards'
+import { DraftText, EndingWaitingCard, EventCard, EventWaitingCard, ResultCard } from '../components/Cards'
 import { TOTAL_DAYS } from '../api/script'
+import { hasDraft } from '../api/frames'
+import type { StreamDraft } from '../api/frames'
 import type { Snapshot } from '../state/types'
 import type { GameActions } from '../state/useGame'
 
@@ -9,12 +11,15 @@ export function GamePage({
   snapshot,
   busy,
   waiting,
+  draft,
   actions,
 }: {
   snapshot: Snapshot
   busy: boolean
   /** 请求在飞。结算页用它把按钮换成流光条；`pendingEnding` 还用它区分「结尾正在写」与「等你点去写结尾」。 */
   waiting: boolean
+  /** 流式响应写进来的标题与正文。空草稿时等待卡和结算屏都逐字退回改动前的样子。 */
+  draft?: StreamDraft
   actions: GameActions
 }) {
   const { phase, history, currentEvent } = snapshot
@@ -34,7 +39,7 @@ export function GamePage({
         dots={day}
       />
 
-      {phase === 'pendingEvent' && <EventWaitingCard />}
+      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} />}
 
       {phase === 'pendingChoice' && currentEvent && (
         <>
@@ -53,10 +58,20 @@ export function GamePage({
             <ResultCard entry={lastEntry} />
           </div>
           {waiting ? (
-            <div className="next" role="status">
-              <p className="t">{isLastDay ? '正在写结尾' : `正在写第 ${day + 1} 天`}</p>
-              <div className="bar" />
-            </div>
+            <>
+              <div className="next" role="status">
+                <p className="t">{isLastDay ? '正在写结尾' : `正在写第 ${day + 1} 天`}</p>
+                <div className="bar" />
+              </div>
+              {/* 请求在飞时存档的 phase 还没变，主流向的下一天始终停在结算屏这一支，
+                  所以逐帧到达的字要挂在这里，只挂在 pendingEvent 那张等待卡上是看不见的。
+                  一帧都没到（服务端仍返回整包 JSON）时这个 div 不存在，画面与改动前逐字相同。 */}
+              {draft && hasDraft(draft) && (
+                <div className="card streaming">
+                  <DraftText draft={draft} />
+                </div>
+              )}
+            </>
           ) : (
             <>
               <button className="btn" disabled={busy} onClick={actions.continueDay}>
