@@ -59,7 +59,9 @@ export default function App() {
               onResume={() => actions.resume()}
             />
           )}
-          {inGame && snapshot && <GamePage snapshot={snapshot} busy={interactionBlocked} actions={actions} />}
+          {inGame && snapshot && (
+            <GamePage snapshot={snapshot} busy={interactionBlocked} waiting={busy} actions={actions} />
+          )}
           {screen === 'ending' && snapshot && <EndingPage snapshot={snapshot} onRestart={() => actions.restart()} />}
           {(screen === 'errRetry' || screen === 'errFatal') && error && (
             <ErrorPage

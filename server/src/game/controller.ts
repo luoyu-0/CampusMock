@@ -12,7 +12,7 @@ import {
   ErrorResponse,
   HistoryEntry,
   HistoryDigestItem,
-  Ending,
+  PlayerProfile,
 } from './types';
 import {
   validateSnapshot,
@@ -31,8 +31,6 @@ import {
   AiError,
 } from '../ai/index';
 
-// 在请求阶段读取配置，确保入口文件已加载根目录 .env。
-
 // ============ 工具：HistoryEntry → HistoryDigestItem ============
 function toDigestItem(h: HistoryEntry): HistoryDigestItem {
   return {
@@ -42,6 +40,16 @@ function toDigestItem(h: HistoryEntry): HistoryDigestItem {
     resultText: h.resultText,
     effects: h.effects,
   };
+}
+
+// ============ 工具：校验并规范化 profile ============
+function normalizeProfile(raw: unknown): PlayerProfile | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const p = raw as Record<string, unknown>;
+  const gender = p.gender === '男' || p.gender === '女' ? p.gender : '';
+  const major = typeof p.major === 'string' ? p.major.trim() : '';
+  if (!gender || !major) return undefined;
+  return { gender, major };
 }
 
 // ============ 工具：错误响应 ============
@@ -67,7 +75,6 @@ function sendSuccess(res: Response, data: SuccessResponse) {
 // ============ 工具：处理 AiError ============
 function handleAiError(res: Response, requestId: string, err: unknown) {
   if (err instanceof AiError) {
-    // 映射成员C的错误码到接口约定的错误码
     const codeMap: Record<string, string> = {
       AI_CONFIG: 'AI_CONFIG_ERROR',
       AI_TIMEOUT: 'AI_TIMEOUT',
@@ -78,13 +85,13 @@ function handleAiError(res: Response, requestId: string, err: unknown) {
     const code = codeMap[err.code] || 'AI_GENERATION_FAILED';
     return sendError(res, requestId, code, err.message, err.retryable);
   }
-  console.error('AI 生成发生未知错误：', err);
-  return sendError(res, requestId, 'AI_GENERATION_FAILED', '内容生成暂时失败，请稍后重试。', true);
+  console.error('Unknown AI error:', err);
+  return sendError(res, requestId, 'AI_GENERATION_FAILED', 'AI generation failed', true);
 }
 
 // ============ 1. POST /api/events/generate ============
 export async function generateEvent(req: Request, res: Response) {
-  const { requestId, snapshot } = (req.body ?? {}) as GenerateEventRequest;
+  const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEventRequest;
 
   if (!requestId) {
     return sendError(res, 'unknown', 'MISSING_REQUEST_ID', 'Missing requestId', false);
@@ -98,7 +105,6 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_SNAPSHOT', validation.reason || 'Snapshot validation failed', false);
   }
 
-  // 幂等：已有未结算事件则直接返回
   if (snapshot.currentEvent && snapshot.phase === 'pendingChoice') {
     const response: SuccessResponse = {
       requestId,
@@ -113,6 +119,7 @@ export async function generateEvent(req: Request, res: Response) {
   }
 
   const day = getCurrentDay(snapshot);
+  const normalizedProfile = normalizeProfile(profile);
 
   try {
     const aiConfig = loadAiConfig();
@@ -121,11 +128,11 @@ export async function generateEvent(req: Request, res: Response) {
         day,
         attributes: snapshot.attributes,
         history: snapshot.history.map(toDigestItem),
+        profile: normalizedProfile,  // ← 传给 AI
       },
       aiConfig
     );
 
-    // 校验 AI 返回的选项效果范围
     for (const opt of eventData.options) {
       const effectValidation = validateEventEffects(opt.effects);
       if (!effectValidation.isValid) {
@@ -190,7 +197,7 @@ export function chooseOption(req: Request, res: Response) {
       eventId: snapshot.currentEvent.id,
       optionId: chosenOption.id,
       eventTitle: snapshot.currentEvent.title,
-      chosenText: chosenOption.text,
+      chosenText: chosenOption.text.split('\n')[0],  // ← 和前端一致
       resultText: chosenOption.resultText,
       effects: chosenOption.effects,
     },
@@ -218,7 +225,7 @@ export function chooseOption(req: Request, res: Response) {
 
 // ============ 3. POST /api/endings/generate ============
 export async function generateEnding(req: Request, res: Response) {
-  const { requestId, snapshot } = (req.body ?? {}) as GenerateEndingRequest;
+  const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEndingRequest;
 
   if (!requestId || !snapshot) {
     return sendError(res, requestId || 'unknown', 'MISSING_PARAMS', 'Missing required params', false);
@@ -233,7 +240,6 @@ export async function generateEnding(req: Request, res: Response) {
     return sendError(res, requestId, 'GAME_NOT_COMPLETED', 'Game not completed yet', false);
   }
 
-  // 幂等：已有结局则直接返回
   if (snapshot.ending && snapshot.phase === 'ended') {
     const response: SuccessResponse = {
       requestId,
@@ -247,6 +253,8 @@ export async function generateEnding(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_PHASE', 'Current phase does not allow ending generation', false);
   }
 
+  const normalizedProfile = normalizeProfile(profile);
+
   try {
     const aiConfig = loadAiConfig();
     const grades = getGrades(snapshot.attributes);
@@ -256,6 +264,7 @@ export async function generateEnding(req: Request, res: Response) {
         attributes: snapshot.attributes,
         grades,
         history: snapshot.history.map(toDigestItem),
+        profile: normalizedProfile,  // ← 传给 AI
       },
       aiConfig
     );
