@@ -290,6 +290,8 @@ export async function chatJSONWithRetry<T>(
       return validate(raw);
     } catch (err) {
       lastError = err instanceof AiError ? err : new AiError("AI_UPSTREAM", "思路突然断了，一时理不清（未知错误）", false);
+      // 重试对玩家与接口响应都不可见，这里失败原因的唯一留痕点
+      console.warn(`[ai] 第 ${attempt}/${cfg.maxAttempts} 次生成失败（${lastError.code}）：${lastError.message}`);
       if (!lastError.retryable) throw lastError;
       if (lastError.code === "AI_INVALID_OUTPUT") feedback = lastError.message;
     }
