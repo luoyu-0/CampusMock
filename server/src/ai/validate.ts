@@ -91,16 +91,21 @@ function checkEffects(value: unknown, index: number, problems: string[]): Attrib
   const record = value as Record<string, unknown>;
   for (const key of ATTRIBUTE_KEYS) {
     const raw = record[key];
+    // 只兼容明确的十进制数值，避免 Number(null)、Number('') 被误当作 0。
+    const numeric = typeof raw === "string" && /^[+-]?\d+(?:\.\d+)?$/.test(raw.trim())
+      ? Number(raw.trim())
+      : raw;
     const range = EFFECT_RANGES[key];
-    if (typeof raw !== "number" || !Number.isInteger(raw)) {
-      problems.push(`options[${index}].effects.${key} 必须是整数`);
+    if (typeof numeric !== "number" || !Number.isFinite(numeric)) {
+      problems.push(`options[${index}].effects.${key} 缺失或不是有效数值`);
       continue;
     }
-    if (raw < range.min || raw > range.max) {
-      problems.push(`options[${index}].effects.${key}=${raw} 超出范围 ${range.min}~${range.max}`);
+    // 先校验原值范围，不能借取整掩盖越界。正负数均按绝对值四舍五入。
+    if (numeric < range.min || numeric > range.max) {
+      problems.push(`options[${index}].effects.${key}=${numeric} 超出范围 ${range.min}~${range.max}`);
       continue;
     }
-    out[key] = raw;
+    out[key] = Math.sign(numeric) * Math.round(Math.abs(numeric)) || 0;
   }
   return out;
 }

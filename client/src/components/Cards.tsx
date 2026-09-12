@@ -10,39 +10,6 @@ export function Note({ children }: { children: ReactNode }) {
   return <div className="note">{children}</div>
 }
 
-/** 待生成事件页的流式草稿：标题一次到齐、正文一段一段追加。
-    刚到的那几个字包一层 .ink-in（洇墨：略小略糊 → 长回原样），key 换一次就重放一次动画；
-    段落是按整篇文本切的，所以 chunk 结尾正好落在换行上时拿不到尾巴，那就按原样渲染，宁可不动画也不能掉字。 */
-export function DraftText({ draft }: { draft: StreamDraft }) {
-  const parts = paragraphs(draft.description)
-  const lastIndex = parts.length - 1
-  return (
-    <>
-      {draft.title && (
-        <h2 className="etitle">
-          <span className="ink-in">{draft.title}</span>
-        </h2>
-      )}
-      <div className="body typing">
-        {parts.map((text, index) => {
-          const fresh =
-            index === lastIndex && draft.fresh && text.endsWith(draft.fresh) ? draft.fresh : null
-          return (
-            <p key={index}>
-              {fresh ? text.slice(0, text.length - fresh.length) : text}
-              {fresh && (
-                <span className="ink-in" key={draft.chunk}>
-                  {fresh}
-                </span>
-              )}
-            </p>
-          )
-        })}
-      </div>
-    </>
-  )
-}
-
 /** 等生成时的那支笔，替掉转圈圈：米黄纸、淡横线、金属笔尖落在纸上，暖光呼吸，蓝墨迹沿横线缓慢延伸。
     只有形状在这里——颜色、节奏、全部动效都在 global.css 的 `.wait .pen` 一节，改观感不用回这个文件。
     渐变的每一档色值同样留在 global.css，改配色不用碰这个文件。
@@ -117,49 +84,6 @@ export function PenRest({ thinking = false }: { thinking?: boolean }) {
   )
 }
 
-/** ① 待生成事件：骨架屏 + 笔尖，并且明说等待不消耗这一天。
-    服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。
-    thinking 是"上一帧到现在已经等了一会儿"，由状态机算，这里只负责换个说法。 */
-export function EventWaitingCard({
-  draft,
-  thinking = false,
-}: {
-  draft?: StreamDraft
-  thinking?: boolean
-}) {
-  const shown = draft && hasDraft(draft) ? draft : null
-  return (
-    <div className="card">
-      <p className="kicker">今天的日记</p>
-      {shown ? (
-        <DraftText draft={shown} />
-      ) : (
-        <div className="skeleton">
-          <div className="l" style={{ width: '52%', height: 20 }} />
-          <div className="l" style={{ width: '100%' }} />
-          <div className="l" style={{ width: '96%' }} />
-          <div className="l" style={{ width: '88%' }} />
-        </div>
-      )}
-      <div className="wait">
-        <PenRest thinking={thinking} />
-        <p className="t">
-          {!shown
-            ? '台灯已经打开了，日记还在路上……'
-            : thinking
-              ? '笔尖停了一下，在想下一句……'
-              : '笔尖还在往下走……'}
-        </p>
-        <p className="s">等待不会消耗这一天</p>
-      </div>
-      <Note>
-        「等待和重试不推进天数」是硬验收项，所以界面上要显式安抚，避免玩家反复点。
-        流式只改这一张卡的中间部分：终帧之前没有任何东西进存档，所以刷新、重试、切后台的行为都和原来一致。
-      </Note>
-    </div>
-  )
-}
-
 /** ④ 待生成结局：四维已经锁定，这一屏只等结尾。 */
 export function EndingWaitingCard() {
   return (
@@ -183,30 +107,65 @@ export function EndingWaitingCard() {
   )
 }
 
-/** ② 待选择：选择前不出现任何数值效果（已确认规则）。 */
+/** 生成和选择共用一张卡片，终帧到达时保留标题、正文节点，只追加选项。
+    笔尖与"刚到那几个字洇一下墨"都挂在这一支：`!event` 就是还在生成，终帧一到整个 wait 块消失、正文换成 event 的字。
+    正文的 <p> 列表始终由同一个表达式产生，所以换成真事件时只有文字变、节点不重挂。
+    段落是按整篇文本切的，所以刚到的 chunk 结尾正好落在换行上时 `endsWith` 拿不到尾巴——那就按原样渲染，宁可不动画也不能掉字。 */
 export function EventCard({
   event,
+  day,
+  draft,
+  thinking = false,
   disabled,
   onChoose,
 }: {
-  event: GameEvent
+  event: GameEvent | null
+  day: number
+  draft?: StreamDraft
+  /** 上一帧到现在已经等了一会儿：笔尖改成原地点触。 */
+  thinking?: boolean
   disabled: boolean
   onChoose: (optionId: string) => void
 }) {
+  const parts = paragraphs(event?.description ?? draft?.description ?? '')
+  const generating = !event
+  const fresh =
+    generating && draft?.fresh && parts[parts.length - 1]?.endsWith(draft.fresh) ? draft.fresh : null
+  const title = event?.title ?? draft?.title ?? ''
   return (
     <div className="card">
-      <p className="kicker">{kickerLabel(event.day)}</p>
-      <h2 className="etitle">{event.title}</h2>
-      <div className="body">
-        {paragraphs(event.description).map((text, index) => (
-          <p key={index}>{text}</p>
+      <p className="kicker">{kickerLabel(day)}</p>
+      <h2 className="etitle">{generating && title ? <span className="ink-in">{title}</span> : title}</h2>
+      <div className={event ? 'body' : 'body typing'}>
+        {parts.map((text, index) => (
+          <p key={index}>
+            {fresh && index === parts.length - 1 ? text.slice(0, text.length - fresh.length) : text}
+            {fresh && index === parts.length - 1 && (
+              <span className="ink-in" key={draft?.chunk}>
+                {fresh}
+              </span>
+            )}
+          </p>
         ))}
       </div>
-      <p className="ask">这时候你会——</p>
-      {event.options.map(option => {
+      {!event && (
+        <div className="wait" role="status">
+          <PenRest thinking={thinking} />
+          <p className="t">
+            {!draft || !hasDraft(draft)
+              ? '台灯已经打开了，日记还在路上……'
+              : thinking
+                ? '笔尖停了一下，在想下一句……'
+                : '笔尖还在往下走……'}
+          </p>
+          <p className="s">等待不会消耗这一天</p>
+        </div>
+      )}
+      {event && <p className="ask">这时候你会——</p>}
+      {event?.options.map((option, index) => {
         const [line, motive] = splitOption(option.text)
         return (
-          <button className="opt" key={option.id} disabled={disabled} onClick={() => onChoose(option.id)}>
+          <button className="opt option-reveal" style={{ animationDelay: `${index * 160}ms` }} key={option.id} disabled={disabled} onClick={() => onChoose(option.id)}>
             {line}
             {motive && <small>{motive}</small>}
           </button>
@@ -215,6 +174,7 @@ export function EventCard({
       <Note>
         选择前不出现任何数值效果（已确认规则）。三个选项不能有明显「最优解」，这条要反馈给成员 C 写进提示词。
         前几天列表展示的是历史 resultText，成员 D 存档里对应 history 字段。
+        「等待和重试不推进天数」是硬验收项，所以生成中要显式写在下面那句话里，避免玩家反复点。
       </Note>
     </div>
   )
