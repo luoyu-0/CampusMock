@@ -154,10 +154,6 @@ export async function generateEvent(req: Request, res: Response) {
       },
       aiConfig,
       {
-        onRetry: () => {
-          // 通知前端清空草稿
-          writeFrame(res, { k: 'reset' });
-        },
         onTitle: (title) => {
           writeFrame(res, { k: 'title', v: title });
         },

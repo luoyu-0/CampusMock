@@ -1,4 +1,4 @@
-import { AiError, chatJSONStream, chatJSONWithRetry, type AiConfig } from "./deepseek.js";
+import { AiError, chatJSON, chatJSONStream, type AiConfig } from "./deepseek.js";
 import { buildFallbackEvent, type AiResult } from "./fallback.js";
 import { buildEventPrompt } from "./prompts/event.js";
 import type { EventGenInput, GameEvent } from "./schema.js";
@@ -6,15 +6,10 @@ import { checkStreamViolation, createEventStreamParser } from "./streamParse.js"
 import { validateEventOutput, type EventContent } from "./validate.js";
 
 // 生成第 input.day 天的事件（事件 + 选项 + 效果 + 结果叙述，一次调用）。
-// 校验失败会把问题清单反馈给模型重试；幂等判断与快照组装由路由层负责。
+// 每次操作只调用一次模型；失败交给玩家手动重试，避免中途替换事件。
 export async function generateEvent(input: EventGenInput, cfg: AiConfig): Promise<GameEvent> {
-  const { system } = buildEventPrompt(input);
-  const content = await chatJSONWithRetry(
-    cfg,
-    system,
-    (feedback) => buildEventPrompt(input, feedback).user,
-    validateEventOutput,
-  );
+  const { system, user } = buildEventPrompt(input);
+  const content = validateEventOutput(await chatJSON(cfg, system, user));
   return toGameEvent(content, input.day);
 }
 
@@ -34,7 +29,6 @@ function toGameEvent(content: EventContent, day: number): GameEvent {
 }
 
 export interface EventStreamHandlers {
-  onRetry?(attempt: number): void; // 第 2 次尝试开始前通知，调用方应清空上一轮已显示的内容
   onTitle?(title: string): void; // 标题闭合（整体一次）
   onDescriptionDelta?(delta: string): void;
   onOptionText?(index: number, text: string): void; // 选项文本闭合（整条弹出）
@@ -66,69 +60,59 @@ function makeIndexedDeltaChecker(): (index: number, delta: string) => void {
 }
 
 // 流式版 generateEvent：标题与选项文本整体回调，描述 / 结果叙述逐字增量推送。
-// 最终仍以整体 JSON 解析 + 校验为准，重试语义与 generateEvent 一致；
-// 违禁词（军训 / 期末）在流式过程中命中会立即中止本次尝试并以反馈重试。
+// 最终仍以整体 JSON 解析 + 校验为准；校验失败立即结束，不自动重写已展示的内容。
 export async function generateEventStream(
   input: EventGenInput,
   cfg: AiConfig,
   handlers?: EventStreamHandlers,
 ): Promise<GameEvent> {
-  const { system } = buildEventPrompt(input);
-  let lastError = new AiError("AI_UPSTREAM", "模型调用未执行", false);
-  let feedback: string | null = null;
-
-  for (let attempt = 1; attempt <= cfg.maxAttempts; attempt++) {
-    if (attempt > 1) handlers?.onRetry?.(attempt);
+  const { system, user } = buildEventPrompt(input);
+  try {
+    const checkDescriptionDelta = makeDeltaChecker();
+    const checkResultDelta = makeIndexedDeltaChecker();
+    const parser = createEventStreamParser({
+      onTitle: (title) => {
+        const violation = checkStreamViolation(title);
+        if (violation) throw new AiError("AI_INVALID_OUTPUT", violation, true);
+        handlers?.onTitle?.(title);
+      },
+      onDescriptionDelta: (delta) => {
+        checkDescriptionDelta(delta);
+        handlers?.onDescriptionDelta?.(delta);
+      },
+      onOptionText: (index, text) => {
+        const violation = checkStreamViolation(text);
+        if (violation) throw new AiError("AI_INVALID_OUTPUT", violation, true);
+        handlers?.onOptionText?.(index, text);
+      },
+      onResultTextDelta: (index, delta) => {
+        checkResultDelta(index, delta);
+        handlers?.onResultTextDelta?.(index, delta);
+      },
+      // 闭合值不再重复查违禁词：增量检查已覆盖全部文本
+      onResultText: (index, text) => {
+        handlers?.onResultText?.(index, text);
+      },
+    });
+    const raw = await chatJSONStream(
+      cfg,
+      system,
+      user,
+      (chunk) => parser.feed(chunk),
+    );
+    let content: unknown;
     try {
-      const checkDescriptionDelta = makeDeltaChecker();
-      const checkResultDelta = makeIndexedDeltaChecker();
-      const parser = createEventStreamParser({
-        onTitle: (title) => {
-          const violation = checkStreamViolation(title);
-          if (violation) throw new AiError("AI_INVALID_OUTPUT", violation, true);
-          handlers?.onTitle?.(title);
-        },
-        onDescriptionDelta: (delta) => {
-          checkDescriptionDelta(delta);
-          handlers?.onDescriptionDelta?.(delta);
-        },
-        onOptionText: (index, text) => {
-          const violation = checkStreamViolation(text);
-          if (violation) throw new AiError("AI_INVALID_OUTPUT", violation, true);
-          handlers?.onOptionText?.(index, text);
-        },
-        onResultTextDelta: (index, delta) => {
-          checkResultDelta(index, delta);
-          handlers?.onResultTextDelta?.(index, delta);
-        },
-        // 闭合值不再重复查违禁词：增量检查已覆盖全部文本
-        onResultText: (index, text) => {
-          handlers?.onResultText?.(index, text);
-        },
-      });
-      const raw = await chatJSONStream(
-        cfg,
-        system,
-        buildEventPrompt(input, feedback).user,
-        (chunk) => parser.feed(chunk),
-      );
-      let content: unknown;
-      try {
-        content = JSON.parse(raw);
-      } catch {
-        throw new AiError("AI_INVALID_OUTPUT", "模型输出内容不是合法 JSON", true);
-      }
-      return toGameEvent(validateEventOutput(content), input.day);
-    } catch (err) {
-      lastError = err instanceof AiError ? err : new AiError("AI_UPSTREAM", "思路突然断了，一时理不清（未知错误）", false);
-      if (!lastError.retryable) throw lastError;
-      if (lastError.code === "AI_INVALID_OUTPUT") feedback = lastError.message;
+      content = JSON.parse(raw);
+    } catch {
+      throw new AiError("AI_INVALID_OUTPUT", "模型输出内容不是合法 JSON", true);
     }
+    return toGameEvent(validateEventOutput(content), input.day);
+  } catch (err) {
+    throw err instanceof AiError ? err : new AiError("AI_UPSTREAM", "思路突然断了，一时理不清（未知错误）", false);
   }
-  throw lastError;
 }
 
-// 失败兜底版：临时性错误重试耗尽时返回备用事件；配置类错误照常抛出，避免掩盖真实问题
+// 显式兜底入口：单次调用失败时返回备用事件；游戏路由不使用此入口。
 export async function generateEventSafe(input: EventGenInput, cfg: AiConfig): Promise<AiResult<GameEvent>> {
   try {
     return { value: await generateEvent(input, cfg), usedFallback: false, error: null };
