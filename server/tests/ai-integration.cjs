@@ -24,6 +24,23 @@ const { isSnapshot } = loadClientModule('storage/index.ts');
 const { GamePage } = loadClientModule('pages/GamePage.tsx');
 const { createElement } = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
+const { validateEventOutput } = require('../dist/ai/validate');
+
+test('模型属性兼容数字字符串和小数，仍拒绝缺失、模糊值及越界', () => {
+  function event(value) {
+    return { title: '校园散步', description: '你来到操场。', options: [0, 1, 2].map(() => ({
+      text: '散步', resultText: '你放松了心情。',
+      effects: { academics: value, social: 0, energy: 0, money: 0 },
+    })) };
+  }
+  for (const [input, expected] of [[1, 1], [' +1 ', 1], ['0', 0], ['-1', -1],
+    [0.5, 1], [-0.5, -1], ['1.6', 2], [0.2, 0], [3, 3], [-2, -2]]) {
+    assert.equal(validateEventOutput(event(input)).options[0].effects.academics, expected);
+  }
+  for (const value of [undefined, null, true, '', ' ', '增加1', '1分', '0x1', [], {}, NaN, Infinity, 3.1, -2.1]) {
+    assert.throws(() => validateEventOutput(event(value)), (error) => error.code === 'AI_INVALID_OUTPUT');
+  }
+});
 
 test('流式终帧保留完整成功和错误响应，兼容分片与末尾无换行', () => {
   for (const terminal of [
@@ -95,6 +112,8 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
   process.env.AI_TIMEOUT_MS = '2000';
   const upstreamRequests = [];
   let upstreamStatus = 200;
+  let invalidEvent = false;
+  let numericVariants = false;
   const upstream = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -114,6 +133,8 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
             effects: { academics: 1, social: 0, energy: -1, money: 0 },
           })),
         };
+    if (invalidEvent) content.options[0].effects.energy = 999;
+    if (numericVariants) content.options[1].effects = { academics: '1', social: 0.5, energy: '-0.5', money: '0' };
     if (upstreamRequests.at(-1).body.stream) {
       res.setHeader('Content-Type', 'text/event-stream');
       const text = JSON.stringify(content);
@@ -149,10 +170,10 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
         body: JSON.stringify({ requestId, snapshot, ...extra }),
       });
       let body;
+      let frames = [];
       if (response.headers.get('content-type')?.includes('application/x-ndjson')) {
         const parser = createFrameParser();
         const text = await response.text();
-        const frames = [];
         for (let i = 0; i < text.length; i += 13) frames.push(...parser.push(text.slice(i, i + 13)));
         frames.push(...parser.end());
         body = frames.findLast((frame) => frame.k === 'end');
@@ -161,7 +182,7 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
         body = await response.json();
       }
       assert.equal(body.requestId, requestId);
-      return { status: response.status, body };
+      return { status: response.status, body, frames };
     }
 
     let snapshot = createInitialSnapshot();
@@ -219,13 +240,44 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
     assert.ok(upstreamRequests.every((request) => request.authorization === 'Bearer ci-placeholder'));
     assert.ok(upstreamRequests.every((request) => request.body.model === 'ci-mock-model'));
 
+    process.env.AI_MAX_ATTEMPTS = '3';
+    invalidEvent = true;
+    const countBeforeInvalid = upstreamRequests.length;
+    const failedDraft = await post('events/generate', createInitialSnapshot());
+    assert.equal(upstreamRequests.length, countBeforeInvalid + 1, '校验失败不得自动重新生成');
+    assert.equal(failedDraft.body.error.code, 'AI_INVALID_OUTPUT');
+    assert.ok(failedDraft.frames.some((frame) => frame.k === 'desc'), '覆盖已有正文显示后校验失败');
+    assert.ok(failedDraft.frames.every((frame) => frame.k !== 'reset'));
+    assert.equal(failedDraft.body.snapshot, undefined, '失败不提交新快照');
+    const { generateEvent, loadAiConfig } = require('../dist/ai');
+    const countBeforeJson = upstreamRequests.length;
+    await assert.rejects(generateEvent({ day: 1, attributes: createInitialSnapshot().attributes, history: [] }, loadAiConfig()),
+      (error) => error.code === 'AI_INVALID_OUTPUT');
+    assert.equal(upstreamRequests.length, countBeforeJson + 1, '非流式事件也只能调用一次');
+    invalidEvent = false;
+    numericVariants = true;
+    const countBeforeNormalized = upstreamRequests.length;
+    const manualRetry = await post('events/generate', createInitialSnapshot());
+    assert.equal(manualRetry.body.snapshot.phase, 'pendingChoice', '手动重试仍能生成事件');
+    assert.equal(upstreamRequests.length, countBeforeNormalized + 1, '数值规范化不增加模型调用');
+    const normalized = manualRetry.body.snapshot;
+    assert.deepEqual(normalized.currentEvent.options[1].effects, { academics: 1, social: 1, energy: -1, money: 0 });
+    const settledNormalized = await post('events/choose', normalized, {
+      eventId: normalized.currentEvent.id, optionId: normalized.currentEvent.options[1].id,
+    });
+    assert.equal(settledNormalized.status, 200);
+    assert.equal(isSnapshot(settledNormalized.body.snapshot), true, '规范化结果必须能够结算和存档');
+    numericVariants = false;
+
     for (const [status, code, retryable] of [
       [401, 'AI_CONFIG_ERROR', false],
       [429, 'AI_RATE_LIMIT', true],
       [500, 'AI_UPSTREAM_ERROR', true],
     ]) {
       upstreamStatus = status;
+      const countBeforeFailure = upstreamRequests.length;
       const failed = await post('events/generate', createInitialSnapshot());
+      assert.equal(upstreamRequests.length, countBeforeFailure + 1, '上游故障不得自动重试事件');
       assert.equal(failed.status, 200, '流已开始，上游错误通过终帧传递');
       assert.equal(failed.body.error.code, code);
       assert.equal(failed.body.error.retryable, retryable);
