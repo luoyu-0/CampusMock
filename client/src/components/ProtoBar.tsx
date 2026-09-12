@@ -9,7 +9,8 @@ import type { ScreenKey } from '../state/useGame'
 const FAULTS: { id: FaultKind; label: string }[] = [
   { id: 'none', label: '不注入失败' },
   { id: 'retryable', label: '下次请求·可重试' },
-  { id: 'fatal', label: '下次请求·不可重试' },
+  { id: 'fatal', label: '下次请求·存档不可重试' },
+  { id: 'fatalServer', label: '下次请求·服务端不可重试' },
 ]
 
 /* 开发期走查面板。原型里它能直接跳 8 个屏，这里改成了「塞一份快照 + 注入一次失败」，
