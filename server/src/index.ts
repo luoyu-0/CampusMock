@@ -1,17 +1,10 @@
-import 'dotenv/config';  
+import './env';
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import routes from './routes';
-
-for (const envPath of [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../.env')]) {
-  if (existsSync(envPath)) {
-    process.loadEnvFile(envPath);
-    break;
-  }
-}
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
