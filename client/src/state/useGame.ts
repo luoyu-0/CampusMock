@@ -274,6 +274,10 @@ export function useGame() {
     dismissError() {
       lastCall.current = null
       setError(null)
+      // 待生成事件与待生成结局两态的界面是一张没有按钮的骨架屏，只清错误等于把玩家放进去干等。
+      // 这两态下退出要退回开始页，让玩家从「继续上次的日记」重新发起这一步。
+      const phase = currentSnapshot.current?.phase
+      if (phase === 'pendingEvent' || phase === 'pendingEnding') setEntered(false)
     },
     restart: startGame,
     runFullWalk() {
