@@ -8,10 +8,13 @@ import type { GameActions } from '../state/useGame'
 export function GamePage({
   snapshot,
   busy,
+  waiting,
   actions,
 }: {
   snapshot: Snapshot
   busy: boolean
+  /** 请求在飞。只有结算页用它把按钮换成进度条；其余三态显示什么完全由 phase 决定。 */
+  waiting: boolean
   actions: GameActions
 }) {
   const { phase, history, currentEvent } = snapshot
@@ -43,13 +46,24 @@ export function GamePage({
 
       {phase === 'showResult' && lastEntry && (
         <>
-          <ResultCard entry={lastEntry} />
-          <button className="btn" disabled={busy} onClick={actions.continueDay}>
-            {isLastDay ? '去写结尾' : '继续写下一篇'}
-          </button>
-          <p className="hint">
-            {isLastDay ? '结尾会在你点之后才开始生成，属性已经不再变化' : `第 ${day + 1} 天会在你点继续之后才开始`}
-          </p>
+          <div className={waiting ? 'turning' : undefined}>
+            <ResultCard entry={lastEntry} />
+          </div>
+          {waiting ? (
+            <div className="next" role="status">
+              <p className="t">{isLastDay ? '正在写结尾' : `正在写第 ${day + 1} 天`}</p>
+              <div className="bar" />
+            </div>
+          ) : (
+            <>
+              <button className="btn" disabled={busy} onClick={actions.continueDay}>
+                {isLastDay ? '去写结尾' : '继续写下一篇'}
+              </button>
+              <p className="hint">
+                {isLastDay ? '结尾会在你点之后才开始生成，属性已经不再变化' : `第 ${day + 1} 天会在你点继续之后才开始`}
+              </p>
+            </>
+          )}
         </>
       )}
 
