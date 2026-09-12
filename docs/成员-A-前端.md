@@ -9,8 +9,11 @@
 - 桌面端两侧远景已从内联 SVG 换成 5 套 AI 生成水彩小景（切屏随机换，兜底仍留着一层 SVG），等团队看过一遍：水彩是否比矢量更贴合「心理治愈」基调、透明度 .45 是否过淡、以及 12 张图合计 642 KB 的体积能否接受。
 - **上一轮那批「未提交」的东西现在已经在主干上了**：`client/` 的页面、状态机、走查条与文档经 PR #4 合入 `main`，成员 D 又把临时的 `src/state/store.ts` 换成了 `src/storage/`。下面「已完成内容」里凡涉及 `store.ts` 与「未调用后端」的表述是当时的记录，以本段为准。
 - **本轮（2026-09-11）做的两件事**：① 用真实 Express 把 14 天 + 异常与重复操作端到端跑了一遍（数据见验证记录）；② 给走查面板补 `⑥ 顶格长文案`、`⑦ 顶格结局` 两个态，按成员 C `server/src/ai/prompts/values.ts` 里的字段上限把文字填满。
-- **界面侧现在唯一的未知仍然是真实模型输出的排版**：C 的 `server/src/ai/` 已进主干（PR #10），但 `server/src/game/controller.ts:70` 调的还是本文件里的 `mockGenerateEvent`，全仓库没有任何一处 import `src/ai/`，所以跑出来的仍是二三十字占位文案。顶格夹具的意义就在这儿：接线那天不用再造数据，点两下按钮就能验排版。
-- 我能独立做完的这轮做完了。剩下的都卡在别人身上：AI 接线（B/C，见待协作 18）；真机局域网验收（D）。`README.md` 与 `Deploy.md` 现在由负责人维护，我没动。
+- **上一轮那条「`controller.ts` 一行都没 import `src/ai/`」已经过期**：成员 B 的 PR #13（合并于 `7ee4b00`）把生成事件与生成结局都接到了 C 的模块上，`server/src/game/controller.ts:27-32` 现在确实从 `../ai/index` 导入 `generateEvent` / `generateEnding` / `loadAiConfig`。所以顶格夹具不再是「等接线那天才用得上」，而是现在就能拿来验真实模型排版的现成数据。界面侧唯一的未知仍然是真实输出的排版。
+- **接线换出来一个新的前置条件**：`controller.ts` 在没配 `DEEPSEEK_API_KEY` 时返回 `AI_CONFIG_ERROR` 且 `retryable: false`，界面停在**不可重试**屏。今晚实测确认呈现是「这本日记我读不懂 / AI config not loaded, check DEEPSEEK_API_KEY / 查看处理说明」，不是可重试那一屏（上一版这里写反了，已改）。顺带一条契约缺陷：`sendError` 的 message 是英文，而 `docs/接口约定.md:50` 要求提示用简体中文——#19 只把 AI 那条分支换成透传 `err.message`，其余仍是英文。
+- **本轮（2026-09-11 深夜）第三件事：正文排版整体改衬线**，走「纸质刊物」方向，单文件 `client/src/styles/global.css` +13/−8，分支 `feat/client-prose-serif` 已推、PR 待评审。逐条取值与两条踩过的坑见「已完成内容」最后一条。
+- **第四件事（2026-09-12 凌晨）：玩家档案对接**。成员 C 早在 `server/src/ai/schema.ts:54` 留了 `PlayerProfile { gender, major }`，提示词两侧也都有「传了就用、没传就走中性表述」的分支（`prompts/event.ts:48-50`、`prompts/ending.ts:52-54`），C 的 README 里那句「收集时机待与成员 C 约定」一直没人认领——**从路由层到界面这一段是空的**。前端这侧补齐：开始页开局问一次、单独一个 localStorage 键、随两个生成请求的顶层 `profile` 发出，共 6 个文件 +158/−15。**按负责人定的节奏没另开分支，与上面的字体改动合在 `feat/client-prose-serif` 同一个 PR**，代价是这个 PR 跨了两件事，评审可以按两个提交分开看。要说清楚：**这条链路目前端到端仍然无效**——`controller.ts:87` 只解构 `requestId, snapshot`，我发过去的 `profile` 会被直接丢弃（不报错、也不生效）。缺的是 B 那边两行，见待协作 23。
+- 我这轮能独立做完的做完了。事实更新：`DEEPSEEK_API_KEY` 已配进本机 `.env`（不入库），PR #19 把 `loadAiConfig()` 挪到请求阶段（此前 `npm run dev:server` 因 cwd 在 `server/` 根本读不到根目录 `.env`），PR #17 让 `choose` 保留 `currentEvent`（`validateSnapshot` 的 `showResult` 分支要求它非空，前端不用改）。**剩下的**：`⑥⑦` 两个顶格态在屏幕上的实际折行仍需人眼过一遍；真实模型输出下的衬线观感没验过；真机局域网验收（D）。`README.md` 与 `Deploy.md` 由负责人维护，我没动。
 - 阻塞条件：`shared/` 公共类型归属仍未定（见待协作事项 1）。实测对过一遍表：我这边的 `client/src/state/types.ts` 与 B 的 `server/src/game/types.ts` **字段名与结构完全一致**，只有类型名不同（`GameEvent`↔`EventData`、`GameOption`↔`EventOption`、`HistoryEntry`↔`HistoryRecord`、`Ending`↔`EndingResult`），前端不需要改字段，定归属时按 B 的命名走即可。
 
 ## 已完成内容
@@ -43,15 +46,31 @@
 - **走查面板补两个顶格态（2026-09-11）**：`client/src/api/presets.ts` 新增 `longText`（第 5 天·待选择）与 `longEnding`（已结束）。字量不是我随手写的长句，是照 C 的 `server/src/ai/prompts/values.ts` 逐项顶到上限：事件 title 30/30、description 300 字写成三段（段间空行，走 `paragraphs()` 切多个 `<p>`）、三个选项 text 分别 55/54/59 且每个都带第二行动机（走 `splitOption()`）、resultText 115/116/120；结局 description 399/400（四段）、evaluation 194/200、advice 138/150。之前的走查态最长只有二三十字，等于排版从没按真实上限验过。
   两个态都**复用 `day4Settled()` / `fullWalkSnapshot()` 的历史，只换文案不换数值**，因此属性与历史重算仍然一致——`⑥` 能被真实 Express 的 `validateSnapshot` 接纳并正常结算（实测见验证记录），点任一选项就会走真接口进 `③ 展示结果`，长 `resultText` 也在真链路上验到，不必等模型。效果值同时覆盖三种显示规则：`money: 0` → 「没变」、`money: -300` → 规则允许的最大单笔支出、`energy: -2`。走查条本身 `flex-wrap:wrap`，多两个按钮不会撑破窄屏；`global.css` 里文本容器没有 `nowrap`/`line-clamp`/固定 `height`，只有插画框有 `overflow:hidden`，所以超长文字不会被裁掉（静态核对，非截图）。
   代价如实记一条：这批夹具会打进生产包，`npm run build -w client` 的 JS 从 281.98 KB 涨到 285.11 KB（gzip 89.25 → 90.95），+3.13 KB。走查条在生产构建里根本不渲染，但 `presets.ts` 被它静态 import，所以没被摇掉。为省 3 KB 改成动态 import 不值得，记下来备查。
+- **正文排版整体改衬线（2026-09-11 深夜，`feat/client-prose-serif`，单文件 +13/−8）**：需求来自两条反馈——「文字看着太单调」和「结局页『评价』『给接下来几周的你』和正文分不开」。方向定成纸质刊物：叙事走衬线，控件与注解留无衬线。改动全在 `client/src/styles/global.css`。
+  - `--font-diary` 由 `"Songti SC","STSong","SimSun",Georgia,serif` 换成 `Georgia,"Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong","SimSun",serif`；新增 `--font-ui` 变量，`body` 从硬编码字体栈改为引用它。
+  - `.body` → 衬线 17px / 行高 1.95 / 字距 .02em / 段首缩进 2em。`.body` 全仓库只有 5 个消费点，都是叙事文字（事件详情、结果正文、结局的详情 / 评价 / 建议），所以这次改动不会波及控件。
+  - `.opt` 主行跟正文同族 16.5px，第二行动机 `.opt small` 显式留无衬线 12px，形成「叙事 / 注解」两层。
+  - `.card .kicker` 12→13px、字距 2→1px、`--ink-faint`→`--ink-soft`，前置 Georgia 让「第 5 天 · 9 月 5 日」里的数字走衬线。
+  - `.sec .h` 13px 品牌蓝 → 19px 衬线 `--brand-deep`。
 
+  **两条坑记下来，别被退回时重踩**：① CSS 字体回退是**按字形**匹配的，Georgia 必须排在中文衬线**之前**——`Songti SC` 自带西文与数字字形，排在后面就轮不到它出场，改顺序等于把数字也换成宋体。② Windows 宋体没有真粗体，`font-weight:600` 是浏览器合成的假粗，实际不构成层级区分。`.sec .h` 第一版用 16px + 墨色，与 17px 衬线正文之间字号差和色相差都接近 0，唯一指望的字重又不生效，所以「改了等于没改」；现在层级靠**字号 + 色相**两个量同时起作用，字重只是顺带。
+
+
+- **玩家档案对接（2026-09-12 凌晨，`feat/client-prose-serif`，6 文件 +158/−15）**：把 C 预留的 `PlayerProfile` 从「有接口没人喂」变成界面上真能填、请求里真带着。四个决定连理由记下来，退回时好谈：
+  - **放请求体顶层，不进快照**。`{ requestId, snapshot, profile }`，档案为空时整个键不出现（不发 `null`，省得服务端再判一次）。为什么不塞进 `snapshot`：快照结构已经冻结、`schemaVersion`/`rulesVersion` 有版本校验，为一个装饰性字段升版本不值当；而且档案不进快照就意味着 D 的存档校验器一行都不用改。实测两端校验器（`server/src/game/service.ts` 的 `validateSnapshot`、`client/src/storage/index.ts` 的 `isSnapshot`）都是**逐字段白名单式**，多余字段放行，所以现在这版发过去也不会报错。
+  - **只在开局问一次，之后不给改**。C 的提示词把档案写成「玩家固定信息，不得更改、不得杜撰与之矛盾的内容」，而中途改口会让前几天的日记和改后的档案对不上——这属于内容自相矛盾，不是界面问题。有存档时开始页只回显一行「这局记下的你：男 · 计算机科学与技术」，没有输入框。
+  - **两项都填才生效**。C 的 `PlayerProfile` 两个字段都是必填，只填一项没法构造合法对象；与其替他补一个默认值（那等于前端替玩家假设性别），不如当成没填、走提示词里那条中性表述分支。界面用一行提示把这条规则说给玩家：「缺任何一项，就当作没认识过你来写」。
+  - **性别走「男 / 女 / 不填」三档，专业是自由文本**。三档的原因是 `gender` 会被原样拼进中文句式 `性别 ${gender}`，给自由文本等于让玩家往提示词里塞任意句子；`不填` 只是把值清成空，不是第三个枚举项。专业保留自由文本（学校专业名没法枚举），但限长 20、`\s+` 压成单空格再 `trim`，这样既不可能塞进换行打断固定句式，也限制了注入文本的体量。存回读时同一套归一再过一遍，防手改 localStorage。
+  - 实现：新增 `client/src/state/profile.ts`（`PROFILE_KEY='campusmock:profile'` + `normalizeProfile` / `loadProfile` / `saveProfile` / `clearProfile`，档案写不进去不拦开局）；`gameApi.ts` 加 `setProfile`，与既有 `setFault` 同构，所以 `ApiCall` 签名、`dispatch`、`lastCall` 重试重放全部没动；`useGame.ts` 挂载时把本机档案读回适配层（否则刷新后继续玩，结局那次生成就丢了档案），清档与坏档清除时一并清掉；`StartPage.tsx` 用 `<form onSubmit>` 承载，回车即开局。
+  - 走查条不需要新预设：档案不是快照的一部分，`presets.ts` 一个字没动。`mockApi` 也没动——离线走查模式下档案不参与生成，这是刻意的，假剧本本来就不接模型。
 
 ## 接口与依赖
 
-- 字段名严格照 [接口约定](接口约定.md) 和 [游戏规则](游戏规则.md) 已冻结的部分使用：`title/description/options`、`text/effects/resultText`、`academics/social/energy/money`、`finalAttributes/grades`；React 这轮又按同一份文档用上了快照与响应的外层字段 —— `schemaVersion/rulesVersion/gameId/revision/phase/history/currentEvent/ending`、`requestId/baseRevision/snapshot`、`error{code,message,retryable}`。**没有自造过任何字段**，界面上多出来的日期与星期是前端按 `history.length` 推的（见待确认 12）。
+- 字段名严格照 [接口约定](接口约定.md) 和 [游戏规则](游戏规则.md) 已冻结的部分使用：`title/description/options`、`text/effects/resultText`、`academics/social/energy/money`、`finalAttributes/grades`；React 这轮又按同一份文档用上了快照与响应的外层字段 —— `schemaVersion/rulesVersion/gameId/revision/phase/history/currentEvent/ending`、`requestId/baseRevision/snapshot`、`error{code,message,retryable}`。**没有自造过任何字段**，界面上多出来的日期与星期是前端按 `history.length` 推的（见待确认 12）。**这轮破了这条**：`profile` 是我加的第一个契约外字段，`docs/接口约定.md` 里目前没有它，已在待协作 23 里请成员 B 收进契约与 `GenerateEventRequest` / `GenerateEndingRequest`——除它之外仍然没有任何自造字段。
 - **默认已经在打真后端**：`client/src/api/gameApi.ts` 按 `VITE_API_MODE` 分流，不设该变量时 `API_MODE === 'server'`，三个接口走 `/api/...` 相对路径（dev 由 Vite 代理到 3000，生产由 Express 直接托管 `client/dist`）。存档读写归成员 D 的 `client/src/storage/`，我这层不再持有任何存储实现。本地假 API 仍然存在，只在 `VITE_API_MODE=mock` 下生效，`setFault()` 失败注入也只在这条路上有效。
 - 假数据仍然是**模块内依赖，不是接口依赖**：`src/api/mockApi.ts` 那三个函数的签名一直没变（进一份快照、出一份响应），所以从假数据切到真接口时页面与状态机一行代码都没动，只是多了一个 `gameApi.ts` 适配层。留着的用处是给离线走查和失败注入用。
 - 非接口依赖：`client/design/assets/` 下 12 张 webp，合计 642 KB（两张主视觉 101 KB + 两侧远景 542 KB）。**素材刻意留在 `design/` 没搬进 `src/assets/`**：走查原型和产品代码引用同一批文件，避免两份素材各自漂移。构建时 Vite 照样能把它们发进 `dist/assets/` 并带上内容 hash。
-- 产物实测（2026-09-11，含本轮顶格夹具）：JS 285.11 KB（gzip 90.95 KB）、CSS 12.23 KB（gzip 3.67 KB）、12 张 webp 642 KB。首屏只请求当前主题的 2 张侧景，88~130 KB。
+- 产物实测（2026-09-11，含本轮顶格夹具）：JS 285.11 KB（gzip 90.95 KB）、CSS 12.23 KB（gzip 3.67 KB）、12 张 webp 642 KB。首屏只请求当前主题的 2 张侧景，88~130 KB。**档案这轮之后**：JS 286.96 KB（gzip 91.73 KB）、CSS 13.45 KB（gzip 3.94 KB），增量是开始页那两个输入与归一逻辑，衬线那轮已另计在验证记录里。
 - `PORT=3000` 取自 `.env.example`，只用在 Vite 的 `/api` 代理目标上。
 
 ## 待协作事项
@@ -94,17 +113,29 @@
 - **14** 已由成员 D 做掉：`ErrorPage.tsx` 里「查看处理说明 / 收起处理说明」是内置屏，不再依赖 `Deploy.md` 的可寻址性，那个 `disabled` 按钮已经不存在。
 - **15** 已由成员 B 做掉：`server/tsconfig.json` 有了，`express` / `cors` / `tsx` / `typescript` 都进了依赖，根目录 `npm run build` 现在前后端都通（实测见验证记录）。**顺带记一条环境坑，别人也会踩**：我第一次跑失败不是代码问题，是 `npm install` 因为本机 npm 缓存目录没有写权限而**静默没装上** server 的新依赖。判断方法是 `npm config get cache`，如果指向 `D:\Program Files\...` 这种需要管理员权限的路径，用 `npm install --cache "<一个可写目录>"` 装完再构建。
 - **16** 已由成员 D 做掉：走查条生产构建默认不渲染，要演示时 `VITE_ENABLE_PROTO_BAR=true`。
+- **18** 已由成员 B 做掉（PR #13，合并于 `7ee4b00`）：`controller.ts` 现在从 `../ai/index` 导入 `generateEvent` / `generateEnding` / `loadAiConfig`，`server/src/ai/` 全仓库再无"没人引用"的模块；`toDigestItem()` 负责把 `history` 映射成 C 要的 `HistoryDigestItem`（`chosenText` → `chosenOptionText`）。**但接线完成不等于验收通过**：「事件与结局来自模型输出」「内容多样性与前后承接」这两条仍需配好密钥后端到端真跑一次才算，目前还没有人跑过。前端侧确认不用改任何代码——事件字段结构与 `client/src/state/types.ts` 完全对得上。
 
 **给成员 B / C：**
 
-> 下面 18、19 两条已整理成独立交接文档 [联调待办-B与C](联调待办-B与C.md)（带可粘贴的复现命令、接线要改的具体位置和错误码透传建议），讨论请在那份文件里进行；这里只留摘要，免得两处文字各自漂移。
+> 下面 19 这条已整理进独立交接文档 [联调待办-B与C](联调待办-B与C.md)（带可粘贴的复现命令与错误码透传建议），讨论请在那份文件里进行；这里只留摘要，免得两处文字各自漂移。同文档里的「AI 接线」一条（原 18）已由成员 B 做掉，见下方已闭环。
 
-18. **成员 C 的 `server/src/ai/` 一行都没接上。** `server/src/game/controller.ts:70` 调的是同文件里第 7 行的 `mockGenerateEvent`，`generateEnding` 同理（第 137 行 → `mockGenerateEnding`）；全仓库 grep 没有任何一处 `import` 指向 `src/ai/`。PR #10 只把模块和 `constants.ts` 的类型对齐并了进来。后果按验收项摆一下：「事件与结局来自模型输出」「内容多样性与前后承接」这两条今天端到端是**过不了**的，界面上能看见的现象是——14 天每天都是同一句「你走在校园里，遇到了一件需要自己决定的小事」，三个选项也恒定不变。接线本身是 B/C 的活（我这边不用改任何代码，事件字段结构完全一致），但**这条要在今晚之前定谁做**，否则明天演示只能演到占位文案。
 19. **服务端不校验 `revision`。** 我拿一份 `revision: 99` 的旧快照去打 `/api/events/choose`，返回 HTTP 200 并正常结算。"同一事件重复提交"服务端是挡住的（按 `eventId` 命中历史直接回原快照），但服务端无状态、无从知道哪份是最新进度，所以**旧快照会被当作当前状态接受并产出分叉结果**；浏览器路径上目前只有 `useGame.ts` 那五重比对在挡。修法很便宜，见交接文档的方案一。
 
 **给团队：**
 
 20. **两个错误屏现在很难演。** `setFault()` 失败注入只在前端假 API（`VITE_API_MODE=mock`）里生效，默认 `server` 模式下走查面板那两颗按钮是 `disabled` 的。真链路上要复现「可重试」只能把 Express 停掉（会拿到 `NETWORK_ERROR`，实测成立），要复现「不可重试」得让服务端返回 `retryable: false` 的错误码——目前只有喂一份坏存档才能触发。演示时如果临时想截这两屏，`VITE_API_MODE=mock` 起一次前端是最省事的办法，需要有人把这写进运行说明（`Deploy.md` 现在归负责人，我没动）。
+21. **上一条依赖的 `VITE_API_MODE` 现在照 `.env.example` 配不出来**（给成员 B / D）。`7ee4b00` 上这份文件只剩 6 个 `DEEPSEEK_*` / `AI_*` 键，`PORT`、`VITE_API_MODE`、`VITE_ENABLE_PROTO_BAR` 三个都不在了，而 `client/vite.config.ts` 的 `envDir` 指向仓库根、`server/src/index.ts` 也从根目录读 `.env` —— 这份文件是前后端共用的唯一入口，删掉的恰好是前端那三个。后果：新同学照模板配出来的前端只能打真后端，一旦没密钥就正好落进上面那条 `AI_CONFIG_ERROR` 死胡同，而离线路径在仓库里查不到怎么开。另外文件首行带 BOM（`U+FEFF`），有人拿脚本读它会多出一个不可见字符。**同条里那个模型名漂移已由 #19 闭环**：`.env.example` 与 `server/src/ai/deepseek.ts` 的默认值现在都是 `deepseek-v4-flash`，不再是我记录时写的 `deepseek-chat`。剩下的两处（三个前端键仍缺、BOM 仍在）还在别人文件里，我只报不动。
+22. **衬线字体栈在演示机上不一定成立，需要有人拍板**（给团队）。`--font-diary` 现在依赖 Georgia（Windows / macOS 自带）+ `SimSun`（Windows 中文衬线兜底），整条链在两台主流桌面上都落得下来。但如果演示机是 Linux、精简版系统，或者局域网设备是安卓浏览器，中文衬线会一路掉到末尾的 `serif` 默认值——观感从「纸质刊物」退回系统默认，而且**每台设备不一样，截图不可复现**。三个选项：① 认了这个风险，演示只用 Windows；② 内嵌一个中文衬线子集（只覆盖界面实际用到的字，按 14 天真实文案估计在几百 KB 量级，我没实测过，别照这个数字决策）；③ 退回无衬线，放弃这轮方向。我倾向 ①，但这条判断要看明天到底在几台什么设备上看，你们定了我再动。
+
+**给成员 B（续，编号接全局序列）：**
+
+23. **玩家档案还差你这两行才真正生效。** 前端已经把 `profile` 发出去了，`controller.ts:87` 只解构 `requestId, snapshot`，所以现在这个字段被**静默丢弃**（不报错、也不生效）。改动很小，四处：
+    - `server/src/game/types.ts:57` 与 `:67`：`GenerateEventRequest` / `GenerateEndingRequest` 各加 `profile?: PlayerProfile`，类型直接从 C 那里引 —— `import type { PlayerProfile } from '../ai/schema'`，`server/src/ai/index.ts:20` 已经把它 re-export 出来了。
+    - `controller.ts:120-125`：`aiGenerateEvent({ day, attributes, history })` → 加一项 `profile`。
+    - 结局侧同一形状的那处调用：`aiGenerateEnding({ attributes, grades, history })` → 加 `profile`。
+    - `docs/接口约定.md` 里补一行：档案是请求体顶层的可选字段，不进快照、不参与 `revision`。
+    几个约定先说清楚，省得来回：**没填时那个键根本不出现**（不是 `null`、不是 `{}`），所以 `body.profile` 原样往下传就行，C 的提示词里「未收集 → 中性表述」分支会自动接住；**前端不用默认值、不猜、不填**，`gender` 只有「男」「女」两种取值、`major` 已被我限到 20 字且不含换行，直接拼进 C 的固定句式 `性别 ${gender}，专业 ${major}` 就是通顺中文。你要更严可以在服务端再校一遍长度——**自由文本进提示词这条残余风险我没法在界面侧消除**，只能限制体量：玩家自己写的话只影响他自己那一局，但如果你想干脆禁掉非中文之类，跟我说，前端改成受控下拉也很快。
+    合完这一条，"事件与结局按玩家档案个性化"才算真的成立；在那之前这个 PR 的前端部分只是把数据送到门口。
 
 ## 验证记录
 
@@ -150,4 +181,12 @@
 - 结果（顶格夹具合法性）：`⑥ 顶格长文案` 那份快照喂给真实 Express 结算 → HTTP 200、`phase=showResult`、`history` 4→5、属性按所选选项正确累加 `{学业 1, 社交 0, 精力 4, 金钱 640}`；`isSnapshot()` 对 `⑥⑦` 两态均为 true。字量逐项量过：事件 title 30/30、description 300 字内三段、选项 text 55/54/59（每个都带第二行）、resultText 115/116/120，结局 399/400 四段、evaluation 194/200、advice 138/150，无一项越界。
 - 验证方式（本轮构建）：`npm run typecheck -w client` 干净；`npm run build -w client` 通过；根目录 `npm run build` 前后端都通过（上一轮记的失败已复现并确认为依赖没装上，见待协作 15 的环境坑）。
 - **本轮如实记一条局限**：浏览器自动化仍被本机权限策略拦着，`⑥⑦` 两态**我只做到"数据合法 + 静态核对样式不会被裁切"，没有截图确认观感**。窄屏 390 与桌面 1440 下顶格文案的实际折行、结局页四段长文是否过长需要人眼过一遍——起 dev 后点走查面板的 `⑥ 顶格长文案` / `⑦ 顶格结局` 即可，各一次点击。
-- 仍存在的问题：深色模式没做（不在本轮范围）；动效只确认在跑，低端局域网设备上的帧率没测；`⑥⑦` 的观感待人眼确认（上一条）；模型接线后如果 C 放宽 `TEXT_LIMITS`（注释里写着"草案值，实测后调整"），顶格夹具要跟着改一次上限，两处数字都在 `server/src/ai/prompts/values.ts`，别在夹具里写死第二次。
+- 结果（2026-09-11 晚，在 `7ee4b00` 上复核）：根目录 `npm run build` 前后端仍然全通。**前提是依赖按锁文件装全**——`dotenv` 是 #13 新加进来的依赖，`node_modules` 没重装就会在 `server/src/index.ts:1` 报 `Cannot find module 'dotenv/config'`，这是环境不是代码，别照着它去改启动方式。另外实机核对了一次网络失败路径：`server` 模式下后端没起来时点「开始」，界面停在 `errRetry`，出「今天的日记还没写完 / 暂时联系不上服务，当前进度没有改变」+「再试一次」+「先回到上一页」+ 底部「重试不会消耗这一天，也不会重复结算」，走查条读数仍是 `已写 0/14 篇 · rev 0` —— 即"请求失败不推进进度"这条在真链路上成立，且这条路径与 `AI_CONFIG_ERROR`（服务端起来了但没配密钥）呈现的是同一屏。
+- 结果（字体这轮）：`npm run build -w client` 通过，CSS 12.54 kB / gzip 3.75 kB（改前 12.23 / 3.67）；把 `origin/main` 的 #17、#19 两次合进来后，根目录 `npm run build` 前后端各再跑通一次。观感在本机桌面档由人眼过了 `② 待选择`、`⑤ 已结束`、`⑦ 顶格结局` 三屏，反馈「效果可以」。**未做**：390 窄屏截图回归——段首缩进 2em 与行高 1.95 的实际折行只做了静态推算（350px 内容宽减 34px 缩进，约合每行 18~19 个汉字），没有留档。
+- 方法记录（比读代码可靠的一条，值得复用）：**判构建产物到底跑哪种 API 模式，去产物里搜接口路径字符串**。`import.meta.env.VITE_*` 是构建期烘进去的，`mock` 分支一旦生效，`post('/api/events/generate')` 会被整条摇掉。今晚实测：mock 模式的产物搜得到假剧本文字、搜不到三个 `/api/...` 路径；改回 server 重新构建后 `api/events/generate`、`api/events/choose`、`api/endings/generate` 各命中 1 次。顺带把三个开关的体积贡献分离测了一遍：基线 285.11 kB，只开走查条 291.93（+6.82），只设 mock 288.60（+3.49），两个都开 293.41——**走查条才是大头**。
+  这条探针当场抓到一个真事故：本机 `.env` 被手工编辑时丢了全部 `#` 注释符，于是原本作为说明留在文件里的 `VITE_API_MODE=mock` 变成一条生效赋值，前端**一个请求都不发**，表现就是负责人说的「没有调用接口」。根因不在代码也不在接口约定，但暴露了一个通用风险：**配置模板里不该留"注释掉的赋值行"**，因为它对任何一次手滑编辑都是敞开的。这条建议交给负责 `.env.example` 的人（见待协作 21）。
+- 结果（档案归一，2026-09-12）：一个临时脚本把 `normalizeProfile` 的九种输入各打一遍，全部符合预期 —— 两项都填才返回对象；只填专业 / 只填性别 / 选「不填」/ `gender` 塞英文 `male` / 传 `null` / 传字符串 → 六种一律 `null`（即不发档案）；带换行的专业压成单空格、60 字专业截到 20 字。脚本放在仓库外，未入库。
+- 结果（请求体形状）：源码级断言两处生成请求都走 `bodyWithProfile`，而 `/api/events/choose` 的字面量 `{ requestId, snapshot, eventId, optionId }` 未被改动（结算不调模型，所以不带档案）；产物探针在 `dist` 里搜到 `campusmock:profile`、「你的专业」、「不填」，说明存储键与开始页表单都没被摇掉。构建：JS 286.96 KB（gzip 91.73）、CSS 13.45 KB（gzip 3.94）。
+- 结果（确认不会撞服务端）：`server/src/index.ts:21` 只有 `express.json({ limit: '1mb' })`，全仓库 grep 不到对请求体键名的白名单校验；`validateSnapshot` 与 D 的 `isSnapshot` 都是逐字段判已知字段。所以 B 接线之前，这份多带一个 `profile` 的请求照样能正常走完全程（静态核对，未打真请求）。
+- **未做（如实记）**：新表单在 390 窄屏与 1440 桌面档的实际观感**没有截图核对**（本机权限拦着浏览器），输入框聚焦态、胶囊选中态、`aria-pressed` 的读屏表现只做到代码级；B 接线之后"日记真的按专业写了内容"这条更无从验起。
+- 仍存在的问题：深色模式没做（不在本轮范围）；动效只确认在跑，低端局域网设备上的帧率没测；`⑥⑦` 的观感待人眼确认（上一条）；模型接线后如果 C 放宽 `TEXT_LIMITS`（注释里写着"草案值，实测后调整"），顶格夹具要跟着改一次上限，两处数字都在 `server/src/ai/prompts/values.ts`，别在夹具里写死第二次。**真实模型输出今晚才第一次可达**：密钥已配进本机 `.env`，PR #19 又把 `loadAiConfig()` 从模块初始化挪到请求阶段——在那之前 `npm run dev:server` 因为 cwd 落在 `server/`，永远读不到根目录 `.env`，无论密钥对不对都报 `AI_CONFIG_ERROR`。**但衬线排版在真实字量下的观感还没肉眼过一遍**，这是字体这条唯一剩下的未验证项。**新增一条同病相怜的**：玩家档案的前端部分已经做完并推上去了，但在成员 B 接上待协作 23 那两行之前，它对生成内容的影响是零——别把"界面能填"当成"档案已生效"。
