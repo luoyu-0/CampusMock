@@ -54,12 +54,22 @@ export interface Snapshot {
   ending: Ending | null;
 }
 
+// ---------- 玩家档案（可选，由前端收集后随请求传入） ----------
+export interface PlayerProfile {
+  gender: string;
+  major: string;
+}
+
+// ---------- 请求类型 ----------
 export interface GenerateEventRequest {
   requestId: string;
   snapshot: Snapshot;
+  profile?: PlayerProfile;
 }
 
-export interface ChooseOptionRequest extends GenerateEventRequest {
+export interface ChooseOptionRequest {
+  requestId: string;
+  snapshot: Snapshot;
   eventId: string;
   optionId: string;
 }
@@ -67,8 +77,10 @@ export interface ChooseOptionRequest extends GenerateEventRequest {
 export interface GenerateEndingRequest {
   requestId: string;
   snapshot: Snapshot;
+  profile?: PlayerProfile;
 }
 
+// ---------- 响应类型 ----------
 export interface SuccessResponse {
   requestId: string;
   baseRevision: number;
@@ -84,6 +96,7 @@ export interface ErrorResponse {
   };
 }
 
+// ---------- AI 输入类型（与成员C的 schema 对齐） ----------
 export interface HistoryDigestItem {
   day: number;
   eventTitle: string;
