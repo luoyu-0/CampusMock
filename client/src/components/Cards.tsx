@@ -10,7 +10,7 @@ export function Note({ children }: { children: ReactNode }) {
   return <div className="note">{children}</div>
 }
 
-/** 流式中间态的字：标题一次到齐、正文一段一段追加。等待卡和结算页下方共用这一段，保证两处观感一致。 */
+/** 待生成事件页的流式草稿：标题一次到齐、正文一段一段追加。 */
 export function DraftText({ draft }: { draft: StreamDraft }) {
   return (
     <>

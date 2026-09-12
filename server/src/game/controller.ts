@@ -1,5 +1,5 @@
 // ============================================
-// 接口控制器（接入成员C的AI模块）
+// 接口控制器（支持 NDJSON 流式响应）
 // ============================================
 
 import { Request, Response } from 'express';
@@ -25,7 +25,7 @@ import {
 } from './service';
 import { TOTAL_DAYS } from './constants';
 import {
-  generateEvent as aiGenerateEvent,
+  generateEventStream,
   generateEnding as aiGenerateEnding,
   loadAiConfig,
   AiError,
@@ -52,7 +52,7 @@ function normalizeProfile(raw: unknown): PlayerProfile | undefined {
   return { gender, major };
 }
 
-// ============ 工具：错误响应 ============
+// ============ 工具：错误响应（流未开始时） ============
 function sendError(
   res: Response,
   requestId: string,
@@ -67,7 +67,7 @@ function sendError(
   res.status(400).json(response);
 }
 
-// ============ 工具：成功响应 ============
+// ============ 工具：成功响应（流未开始时） ============
 function sendSuccess(res: Response, data: SuccessResponse) {
   res.json(data);
 }
@@ -89,7 +89,12 @@ function handleAiError(res: Response, requestId: string, err: unknown) {
   return sendError(res, requestId, 'AI_GENERATION_FAILED', 'AI generation failed', true);
 }
 
-// ============ 1. POST /api/events/generate ============
+// ============ 工具：写一帧 NDJSON ============
+function writeFrame(res: Response, frame: Record<string, unknown>) {
+  res.write(JSON.stringify(frame) + '\n');
+}
+
+// ============ 1. POST /api/events/generate（流式） ============
 export async function generateEvent(req: Request, res: Response) {
   const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEventRequest;
 
@@ -105,6 +110,7 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_SNAPSHOT', validation.reason || 'Snapshot validation failed', false);
   }
 
+  // 幂等：已有未结算事件则直接返回（整包 JSON，不用流）
   if (snapshot.currentEvent && snapshot.phase === 'pendingChoice') {
     const response: SuccessResponse = {
       requestId,
@@ -118,28 +124,69 @@ export async function generateEvent(req: Request, res: Response) {
     return sendError(res, requestId, 'GAME_COMPLETED', 'Game already ended', false);
   }
 
+  let aiConfig: ReturnType<typeof loadAiConfig>;
+  try {
+    aiConfig = loadAiConfig();
+  } catch (err) {
+    return handleAiError(res, requestId, err);
+  }
+
   const day = getCurrentDay(snapshot);
   const normalizedProfile = normalizeProfile(profile);
 
+  // ============ 开始流式响应 ============
+  // 先写头，状态码 200，Content-Type 是 NDJSON
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+
+  // 流已开始，此后所有错误都通过终帧传递，不再改状态码
   try {
-    const aiConfig = loadAiConfig();
-    const eventData = await aiGenerateEvent(
+    const eventData = await generateEventStream(
       {
         day,
         attributes: snapshot.attributes,
         history: snapshot.history.map(toDigestItem),
-        profile: normalizedProfile,  // ← 传给 AI
+        profile: normalizedProfile,
       },
-      aiConfig
+      aiConfig,
+      {
+        onRetry: () => {
+          // 通知前端清空草稿
+          writeFrame(res, { k: 'reset' });
+        },
+        onTitle: (title) => {
+          writeFrame(res, { k: 'title', v: title });
+        },
+        onDescriptionDelta: (delta) => {
+          writeFrame(res, { k: 'desc', v: delta });
+        },
+        // onOptionText / onResultTextDelta 前端暂不画，不写帧
+      }
     );
 
+    // 校验选项效果
     for (const opt of eventData.options) {
       const effectValidation = validateEventEffects(opt.effects);
       if (!effectValidation.isValid) {
-        return sendError(res, requestId, 'AI_INVALID_OUTPUT', effectValidation.reason || 'Effect out of range', true);
+        // 流已开始，用终帧返回错误
+        writeFrame(res, {
+          k: 'end',
+          requestId,
+          error: {
+            code: 'AI_INVALID_OUTPUT',
+            message: effectValidation.reason || 'Effect out of range',
+            retryable: true,
+          },
+        });
+        return res.end();
       }
     }
 
+    // 组装新快照
     let newSnapshot = incrementRevision(snapshot);
     newSnapshot = {
       ...newSnapshot,
@@ -147,18 +194,46 @@ export async function generateEvent(req: Request, res: Response) {
       currentEvent: eventData,
     };
 
+    // 终帧
     const response: SuccessResponse = {
       requestId,
       baseRevision: snapshot.revision,
       snapshot: newSnapshot,
     };
-    sendSuccess(res, response);
+    writeFrame(res, { k: 'end', ...response });
+    res.end();
   } catch (err) {
-    return handleAiError(res, requestId, err);
+    // 流已开始，错误也通过终帧传
+    const errorResponse = buildAiErrorResponse(requestId, err);
+    writeFrame(res, { k: 'end', ...errorResponse });
+    res.end();
   }
 }
 
-// ============ 2. POST /api/events/choose ============
+// ============ 工具：把 AiError 转成错误响应体 ============
+function buildAiErrorResponse(requestId: string, err: unknown): ErrorResponse {
+  if (err instanceof AiError) {
+    const codeMap: Record<string, string> = {
+      AI_CONFIG: 'AI_CONFIG_ERROR',
+      AI_TIMEOUT: 'AI_TIMEOUT',
+      AI_RATE_LIMIT: 'AI_RATE_LIMIT',
+      AI_UPSTREAM: 'AI_UPSTREAM_ERROR',
+      AI_INVALID_OUTPUT: 'AI_INVALID_OUTPUT',
+    };
+    const code = codeMap[err.code] || 'AI_GENERATION_FAILED';
+    return {
+      requestId,
+      error: { code, message: err.message, retryable: err.retryable },
+    };
+  }
+  console.error('Unknown AI error:', err);
+  return {
+    requestId,
+    error: { code: 'AI_GENERATION_FAILED', message: 'AI generation failed', retryable: true },
+  };
+}
+
+// ============ 2. POST /api/events/choose（普通 JSON） ============
 export function chooseOption(req: Request, res: Response) {
   const { requestId, snapshot, eventId, optionId } = (req.body ?? {}) as ChooseOptionRequest;
 
@@ -197,7 +272,7 @@ export function chooseOption(req: Request, res: Response) {
       eventId: snapshot.currentEvent.id,
       optionId: chosenOption.id,
       eventTitle: snapshot.currentEvent.title,
-      chosenText: chosenOption.text.split('\n')[0],  // ← 和前端一致
+      chosenText: chosenOption.text.split('\n')[0],
       resultText: chosenOption.resultText,
       effects: chosenOption.effects,
     },
@@ -223,7 +298,7 @@ export function chooseOption(req: Request, res: Response) {
   sendSuccess(res, response);
 }
 
-// ============ 3. POST /api/endings/generate ============
+// ============ 3. POST /api/endings/generate（普通 JSON，暂无流式） ============
 export async function generateEnding(req: Request, res: Response) {
   const { requestId, snapshot, profile } = (req.body ?? {}) as GenerateEndingRequest;
 
@@ -264,7 +339,7 @@ export async function generateEnding(req: Request, res: Response) {
         attributes: snapshot.attributes,
         grades,
         history: snapshot.history.map(toDigestItem),
-        profile: normalizedProfile,  // ← 传给 AI
+        profile: normalizedProfile,
       },
       aiConfig
     );
