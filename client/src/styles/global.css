@@ -242,12 +242,47 @@ body{
 @keyframes cm-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.typing p:last-child::after{animation:none}}
 .wait{text-align:center;padding:26px 0 10px}
-.wait .spin{
-  width:52px;height:52px;margin:0 auto 16px;border-radius:50%;
-  border:3px solid var(--brand-soft);border-top-color:var(--brand);
-  animation:sp 1s linear infinite;
+/* 等生成时的那支笔。动效只有位移与透明度——转圈换掉的理由是它和「写日记」毫无关系。
+   四个周期 2.8 / 2.6 / 6.5 / 9 互不成整数倍，盯久了不会看出一拍一拍的循环感。 */
+.wait .pen{display:block;width:158px;height:auto;margin:0 auto 14px;overflow:visible}
+/* 纸色与横线沿用背景漂浮纸页那两个色值，同一屏里不能出现两种纸 */
+.wait .pen .pn-paper{fill:#fffdf7;stroke:rgba(120,110,92,.16);stroke-width:1}
+.wait .pen .pn-rule{fill:none;stroke:rgba(120,110,92,.2);stroke-width:1.2}
+.wait .pen .pn-ink{
+  fill:none;stroke:var(--brand);stroke-width:3;stroke-linecap:round;
+  stroke-dasharray:100;stroke-dashoffset:100;
+  animation:cm-pen-ink 6.5s ease-in-out infinite;
 }
-@keyframes sp{to{transform:rotate(360deg)}}
+.wait .pen .pn-glow{fill:url(#cm-pen-warm);transform-box:fill-box;transform-origin:center;animation:cm-pen-glow 2.8s ease-in-out infinite}
+.wait .pen .pn-wet{fill:url(#cm-pen-wet);transform-box:fill-box;transform-origin:center;animation:cm-pen-wet 3.6s ease-out infinite}
+.wait .pen .pn-hand{animation:cm-pen-hand 9s ease-in-out infinite alternate}
+.wait .pen .pn-nib{animation:cm-pen-nib 2.6s ease-in-out infinite}
+.wait .pen .pn-body{fill:url(#cm-pen-metal);stroke:rgba(90,100,120,.32);stroke-width:.8}
+.wait .pen .pn-holder{fill:#9aa5b7}
+.wait .pen .pn-slit{stroke:rgba(60,70,90,.5);stroke-width:1.1;stroke-linecap:round}
+.wait .pen .pn-hole{fill:#fffdf7}
+.wait .pen .mt-1{stop-color:#f0f4fa}
+.wait .pen .mt-2{stop-color:#c2ccdc}
+.wait .pen .mt-3{stop-color:#8a94a7}
+.wait .pen .mt-4{stop-color:#e2e8f2}
+.wait .pen .wm-1{stop-color:var(--energy);stop-opacity:.5}
+.wait .pen .wm-2{stop-color:var(--energy);stop-opacity:0}
+.wait .pen .wt-1{stop-color:var(--brand);stop-opacity:.45}
+.wait .pen .wt-2{stop-color:var(--brand);stop-opacity:0}
+@keyframes cm-pen-glow{0%,100%{opacity:.45;transform:scale(.9)}50%{opacity:1;transform:scale(1.12)}}
+@keyframes cm-pen-nib{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+/* 墨点从笔尖底下摊开再消失，像水滴落到纸上那一下 */
+@keyframes cm-pen-wet{0%{opacity:.5;transform:scale(.45)}70%{opacity:.14;transform:scale(1.35)}100%{opacity:0;transform:scale(1.7)}}
+/* 写完 → 停一下 → 淡掉再重来。淡掉是必须的：不淡就会在满格处硬跳回空白，那一下最扎眼。 */
+@keyframes cm-pen-ink{0%{stroke-dashoffset:100;opacity:0}10%{opacity:.55}72%{stroke-dashoffset:0;opacity:.55}100%{stroke-dashoffset:0;opacity:0}}
+@keyframes cm-pen-hand{from{transform:translateX(-5px)}to{transform:translateX(5px)}}
+@media (prefers-reduced-motion:reduce){
+  .wait .pen .pn-ink,.wait .pen .pn-glow,.wait .pen .pn-wet,
+  .wait .pen .pn-hand,.wait .pen .pn-nib{animation:none}
+  .wait .pen .pn-ink{stroke-dashoffset:0;opacity:.5}
+  .wait .pen .pn-glow{opacity:.85}
+  .wait .pen .pn-wet{opacity:.22}
+}
 .wait .t{font-size:15px;color:var(--ink-soft)}
 .wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 

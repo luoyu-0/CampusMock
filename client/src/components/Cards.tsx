@@ -24,7 +24,54 @@ export function DraftText({ draft }: { draft: StreamDraft }) {
   )
 }
 
-/** ① 待生成事件：骨架屏 + 转圈，并且明说等待不消耗这一天。
+/** 等生成时的那支笔，替掉转圈圈：米黄纸、淡横线、金属笔尖落在纸上，暖光呼吸，蓝墨迹沿横线缓慢延伸。
+    只有形状在这里——颜色、节奏、全部动效都在 global.css 的 `.wait .pen` 一节，改观感不用回这个文件。
+    渐变色的 stop 同样只挂 class、颜色交给 CSS：连渐变的每一档色值也留在 global.css 那一块，改配色不用碰这个文件。
+    aria-hidden 是因为旁边那句「笔尖还在往下走」才是给读屏的状态文字，这幅画只是它的重复。 */
+export function PenRest() {
+  return (
+    <svg className="pen" viewBox="0 0 180 108" aria-hidden="true">
+      <defs>
+        <linearGradient id="cm-pen-metal" x1="0" y1="0" x2="1" y2="0">
+          <stop className="mt-1" offset="0" />
+          <stop className="mt-2" offset=".38" />
+          <stop className="mt-3" offset=".62" />
+          <stop className="mt-4" offset="1" />
+        </linearGradient>
+        <radialGradient id="cm-pen-warm">
+          <stop className="wm-1" offset="0" />
+          <stop className="wm-2" offset="1" />
+        </radialGradient>
+        <radialGradient id="cm-pen-wet">
+          <stop className="wt-1" offset="0" />
+          <stop className="wt-2" offset="1" />
+        </radialGradient>
+      </defs>
+
+      <rect className="pn-paper" x="10" y="10" width="160" height="88" rx="9" />
+      <path className="pn-rule" d="M24 36H156" />
+      <path className="pn-rule" d="M24 54H156" />
+      <path className="pn-rule" d="M24 72H156" />
+      <path className="pn-rule" d="M24 90H118" />
+
+      {/* pathLength=100 把这条线归一化，CSS 里的虚线偏移就能写成百分比，不必去量真实长度 */}
+      <path className="pn-ink" pathLength={100} d="M30 72c11-5 21 4 32-1 9-4 17 3 25-1 8-3 15 3 21 0" />
+
+      <g className="pn-hand">
+        <circle className="pn-glow" cx="108" cy="70" r="17" />
+        <ellipse className="pn-wet" cx="108" cy="73" rx="7" ry="3.4" />
+        <g className="pn-nib">
+          <rect className="pn-holder" x="99" y="20" width="18" height="15" rx="4" />
+          <path className="pn-body" d="M108 70c-7-12-9-24-8-35h16c1 11-1 23-8 35z" />
+          <path className="pn-slit" d="M108 63V44" />
+          <circle className="pn-hole" cx="108" cy="41" r="2.8" />
+        </g>
+      </g>
+    </svg>
+  )
+}
+
+/** ① 待生成事件：骨架屏 + 笔尖，并且明说等待不消耗这一天。
     服务端逐帧输出时，已经写出来的标题和正文会盖掉骨架屏；一帧都没到就是原来那张骨架屏。 */
 export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
   const shown = draft && hasDraft(draft) ? draft : null
@@ -42,7 +89,7 @@ export function EventWaitingCard({ draft }: { draft?: StreamDraft }) {
         </div>
       )}
       <div className="wait">
-        <div className="spin" />
+        <PenRest />
         <p className="t">{shown ? '笔尖还在往下走……' : '台灯已经打开了，日记还在路上……'}</p>
         <p className="s">等待不会消耗这一天</p>
       </div>
@@ -60,7 +107,7 @@ export function EndingWaitingCard() {
     <>
       <div className="card">
         <div className="wait">
-          <div className="spin" />
+          <PenRest />
           <p className="t">十四天的日记摊在桌上，正在为你写结尾……</p>
           <p className="s">属性已经锁定，这一步只重试结局，不会重做第 14 天</p>
         </div>
