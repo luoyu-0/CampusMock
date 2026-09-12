@@ -40,7 +40,7 @@ const NETWORK_MESSAGE = "回忆有些模糊，可能得再仔细想想（网络�
 const UPSTREAM_MESSAGE = "写着写着，笔没了墨";
 
 export function loadAiConfig(): AiConfig {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
     console.warn("[ai] AI_CONFIG：缺少环境变量 DEEPSEEK_API_KEY（密钥不进入前端与存档）");
     throw new AiError("AI_CONFIG", `${CONFIG_MESSAGE}（未配置API密钥）`, false);

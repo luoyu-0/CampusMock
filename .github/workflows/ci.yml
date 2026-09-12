@@ -21,6 +21,14 @@ jobs:
     name: 构建与冒烟测试
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 无需 GitHub Secrets；真实模型请求仅在开发者本机手动验证。
+    env:
+      DEEPSEEK_API_KEY: ''
+      DEEPSEEK_BASE_URL: http://127.0.0.1:1
+      DEEPSEEK_MODEL: ci-mock-model
+      AI_TIMEOUT_MS: '2000'
+      AI_MAX_ATTEMPTS: '1'
+      VITE_API_MODE: server
 
     steps:
       - name: 检出代码
@@ -40,7 +48,7 @@ jobs:
         run: npm run build
 
       - name: 验证 AI 接线与完整游戏流程（模拟上游）
-        run: node --test server/tests/ai-integration.cjs
+        run: npm run test:ci
 
       - name: 启动服务并执行冒烟测试
         shell: bash
