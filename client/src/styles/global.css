@@ -365,3 +365,11 @@ body{
   background:#fff8e6;border:1px dashed #e8c96a;border-radius:10px;
 }
 body.show-notes .note{display:block}
+
+/* 选项依次浮现；延迟期间隐藏且不可交互，正文区域不参与动画。 */
+.option-reveal{animation:cm-option-reveal .28s ease both}
+@keyframes cm-option-reveal{
+  from{opacity:0;transform:translateY(6px);visibility:hidden}
+  to{opacity:1;transform:translateY(0);visibility:visible}
+}
+@media (prefers-reduced-motion:reduce){.option-reveal{animation:none}}

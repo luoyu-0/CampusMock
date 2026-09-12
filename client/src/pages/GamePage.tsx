@@ -1,5 +1,5 @@
 import { Chrome, HistoryList, chromeDay, chromeTitle } from '../components/Chrome'
-import { EndingWaitingCard, EventCard, EventWaitingCard, ResultCard } from '../components/Cards'
+import { EndingWaitingCard, EventCard, ResultCard } from '../components/Cards'
 import { TOTAL_DAYS } from '../api/script'
 import type { StreamDraft } from '../api/frames'
 import type { Snapshot } from '../state/types'
@@ -40,15 +40,15 @@ export function GamePage({
         dots={day}
       />
 
-      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} />}
-
-      {phase === 'pendingChoice' && currentEvent && (
+      {(phase === 'pendingEvent' || phase === 'pendingChoice') && (
         <>
           <HistoryList history={history} />
           <EventCard
-            event={currentEvent}
+            event={phase === 'pendingChoice' ? currentEvent : null}
+            day={day}
+            draft={draft}
             disabled={busy}
-            onChoose={optionId => actions.choose(currentEvent, optionId)}
+            onChoose={optionId => currentEvent && actions.choose(currentEvent, optionId)}
           />
         </>
       )}
