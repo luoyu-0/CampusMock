@@ -246,6 +246,20 @@ body{
 .wait .t{font-size:15px;color:var(--ink-soft)}
 .wait .s{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 
+/* 点完「继续写下一篇」，按钮塔成一条流光条。它不按比例走：我们并不知道模型写到哪了，
+   假装进度比不装更糟，所以只做一条从左往右循环的笔尖光带，颜色借精力那颗的暖橙。 */
+.next{margin-top:18px}
+.next .t{font-size:13.5px;color:var(--ink-soft);text-align:center;margin:0 0 10px}
+.next .bar{
+  height:4px;border-radius:999px;background-color:var(--energy-soft);
+  background-image:linear-gradient(90deg,transparent,var(--energy),transparent);
+  background-size:36% 100%;background-repeat:no-repeat;
+  animation:cm-next 1.5s ease-in-out infinite;
+}
+@keyframes cm-next{from{background-position:-40% 0}to{background-position:140% 0}}
+/* 刚读完的那一页稍微退后一点，注意力交给下面的流光条 */
+.turning{opacity:.55;transition:opacity .35s ease}
+
 /* ---------- 错误态 ---------- */
 .card.err{background:var(--danger-soft);border:1px solid #f6d9d9}
 .card.err .t{font-size:17px;font-weight:700;margin:0 0 8px;color:#9c3f3c}
