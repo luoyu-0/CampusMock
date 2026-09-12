@@ -3,6 +3,7 @@
    换成成员 B 的真服务时，只需要把这个文件的三个函数换成 fetch，其他代码不用动。 */
 
 import type { ApiError, AttributeKey, ErrorResponse, GameEvent, Snapshot, SuccessResponse } from '../state/types'
+import type { FrameHandler, StreamFrame } from './frames'
 import { TOTAL_DAYS, advanceOneDay, eventForDay } from './script'
 import { buildEnding } from './ending'
 
@@ -17,9 +18,37 @@ export function setFault(next: FaultKind) {
 
 const LATENCY = { min: 420, max: 1150 }
 
-function wait() {
-  const ms = LATENCY.min + Math.random() * (LATENCY.max - LATENCY.min)
-  return new Promise<void>(resolve => setTimeout(resolve, ms))
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, Math.max(0, ms)))
+}
+
+function pickLatency() {
+  return LATENCY.min + Math.random() * (LATENCY.max - LATENCY.min)
+}
+
+/** 假服务也逐帧输出：把标题和正文切片，在原来那段等待里均匀发完，终帧之后才返回响应。
+    所以开流式不会让某一天变慢，只是等待屏上有了在往下写的字。 */
+async function spread(frames: StreamFrame[], onFrame: FrameHandler | undefined, ms: number) {
+  if (!onFrame || frames.length === 0) {
+    await sleep(ms)
+    return
+  }
+  const step = ms / (frames.length + 1)
+  let elapsed = 0
+  for (const frame of frames) {
+    await sleep(step)
+    elapsed += step
+    onFrame(frame)
+  }
+  await sleep(ms - elapsed)
+}
+
+function eventFrames(event: GameEvent): StreamFrame[] {
+  const pieces: StreamFrame[] = [{ k: 'title', v: event.title }]
+  for (let at = 0; at < event.description.length; at += 16) {
+    pieces.push({ k: 'desc', v: event.description.slice(at, at + 16) })
+  }
+  return pieces
 }
 
 /** base 是请求方发来的那份快照，next 是本次转换的结果；
@@ -60,13 +89,8 @@ function injectedFault(requestId: string): ErrorResponse | null {
     return fail(requestId, 'MODEL_TIMEOUT', '网络好像打了个盹，前面写好的内容都还在。', true)
   }
   if (kind === 'fatalServer') {
-    // code 与文案都照抄真服务：成员 C 在密钥缺失时抛的就是这一句，retryable 也是 false。
-    return fail(
-      requestId,
-      'AI_CONFIG',
-      '缺少环境变量 DEEPSEEK_API_KEY，请在后端 .env 中配置（密钥不进入前端与存档）',
-      false,
-    )
+    // code 与文案都照抄真服务：controller 把 AiError 的 AI_CONFIG 改名成 AI_CONFIG_ERROR 后原样透传这一句。
+    return fail(requestId, 'AI_CONFIG_ERROR', '心神不定，不知如何落笔（未配置API密钥）', false)
   }
   return fail(
     requestId,
@@ -77,25 +101,37 @@ function injectedFault(requestId: string): ErrorResponse | null {
 }
 
 /** POST /api/events/generate */
-export async function generateEvent(snapshot: Snapshot, requestId: string): Promise<SuccessResponse | ErrorResponse> {
-  await wait()
+export async function generateEvent(
+  snapshot: Snapshot,
+  requestId: string,
+  onFrame?: FrameHandler,
+): Promise<SuccessResponse | ErrorResponse> {
+  const ms = pickLatency()
   const injected = injectedFault(requestId)
-  if (injected) return injected
+  if (injected) {
+    await sleep(ms)
+    return injected
+  }
 
   // 待选择说明有一局事件已经生成好但还没结算：直接返回它，不重新抽取（接口约定的幂等分支）
   if (snapshot.phase === 'pendingChoice' && snapshot.currentEvent) {
+    await sleep(ms)
     return ok(requestId, snapshot, snapshot)
   }
 
   const day = snapshot.history.length + 1
   if (day > TOTAL_DAYS) {
+    await sleep(ms)
     return fail(requestId, 'GAME_ALREADY_DONE', '两周已经写满了。', false)
   }
 
   const event = eventForDay(day)
   if (outOfRange(event)) {
+    await sleep(ms)
     return fail(requestId, 'EFFECT_OUT_OF_RANGE', '这一次生成的数值不对，我重新问一次。', true)
   }
+
+  await spread(eventFrames(event), onFrame, ms)
 
   const next: Snapshot = {
     ...snapshot,
@@ -113,7 +149,7 @@ export async function chooseOption(
   optionId: string,
   requestId: string,
 ): Promise<SuccessResponse | ErrorResponse> {
-  await wait()
+  await sleep(pickLatency())
   const injected = injectedFault(requestId)
   if (injected) return injected
 
@@ -136,7 +172,7 @@ export async function chooseOption(
 
 /** POST /api/endings/generate */
 export async function generateEnding(snapshot: Snapshot, requestId: string): Promise<SuccessResponse | ErrorResponse> {
-  await wait()
+  await sleep(pickLatency())
   const injected = injectedFault(requestId)
   if (injected) return injected
 

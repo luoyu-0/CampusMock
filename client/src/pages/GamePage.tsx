@@ -1,6 +1,7 @@
 import { Chrome, HistoryList, chromeDay, chromeTitle } from '../components/Chrome'
 import { EndingWaitingCard, EventCard, EventWaitingCard, ResultCard } from '../components/Cards'
 import { TOTAL_DAYS } from '../api/script'
+import type { StreamDraft } from '../api/frames'
 import type { Snapshot } from '../state/types'
 import type { GameActions } from '../state/useGame'
 
@@ -9,12 +10,15 @@ export function GamePage({
   snapshot,
   busy,
   waiting,
+  draft,
   actions,
 }: {
   snapshot: Snapshot
   busy: boolean
   /** 请求在飞。结算页用它把按钮换成流光条；`pendingEnding` 还用它区分「结尾正在写」与「等你点去写结尾」。 */
   waiting: boolean
+  /** 流式响应写进来的标题与正文，只在事件生成那一屏有内容；没有帧到达时是空草稿。 */
+  draft?: StreamDraft
   actions: GameActions
 }) {
   const { phase, history, currentEvent } = snapshot
@@ -34,7 +38,7 @@ export function GamePage({
         dots={day}
       />
 
-      {phase === 'pendingEvent' && <EventWaitingCard />}
+      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} />}
 
       {phase === 'pendingChoice' && currentEvent && (
         <>
