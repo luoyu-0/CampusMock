@@ -18,7 +18,7 @@ export type ScreenKey =
   | 'errRetry'
   | 'errFatal'
 
-type ApiCall = (snapshot: Snapshot, requestId: string, onFrame: FrameHandler) => Promise<unknown>
+type ApiCall = (snapshot: Snapshot, requestId: string, onFrame?: FrameHandler) => Promise<unknown>
 type ResumeAfterSave = 'none' | 'generateEvent' | 'generateEnding'
 
 interface PendingSave {
@@ -93,11 +93,6 @@ function isApiResult(value: unknown): value is ApiResult {
   return Number.isSafeInteger(response.baseRevision) && 'snapshot' in response
 }
 
-/* 「在想」只能靠时间猜：服务端不告诉我们它写到哪、卡在哪，只看上一帧离现在多久。
-   假服务两帧之间最多两百来毫秒（mockApi 把 420~1150ms 均分给六七帧），1.2 秒远在它之上，
-   所以离线走查里不会一闪一闪地切进思考态。真模型第一帧要等多久我没测过，可能超过这个阈值。 */
-const FRAME_IDLE_MS = 1200
-
 export function useGame() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
@@ -107,43 +102,24 @@ export function useGame() {
   const [recoveryRaw, setRecoveryRaw] = useState<string | null>(null)
   /** 只在事件生成的那几秒存在：流式帧写进来的标题与正文草稿。不进快照、不进 localStorage。 */
   const [draft, setDraft] = useState<StreamDraft>(EMPTY_DRAFT)
-  /** 笔尖"停一下在想"：请求在飞，但上一帧已经等了一阵子（或者一帧都没来过）。同样不进存档。 */
+  /** 笔尖“停一下在想”：请求在飞，但上一帧已经等了一阵子（或者一帧都没来过）。同样不进存档。 */
   const [thinking, setThinking] = useState(false)
 
   const currentSnapshot = useRef<Snapshot | null>(null)
   const requestGeneration = useRef(0)
   const lastCall = useRef<{ base: Snapshot; call: ApiCall } | null>(null)
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const applySnapshot = useCallback((next: Snapshot | null) => {
     currentSnapshot.current = next
     setSnapshot(next)
   }, [])
 
-  /** 重新计时：请求刚发起、每来一帧都算"还在写"。到点还没动静就把笔尖切进思考态。 */
-  const watchForStall = useCallback(() => {
-    if (idleTimer.current !== null) clearTimeout(idleTimer.current)
-    idleTimer.current = setTimeout(() => {
-      idleTimer.current = null
-      setThinking(true)
-    }, FRAME_IDLE_MS)
-  }, [])
-
-  const stopWatchingStall = useCallback(() => {
-    if (idleTimer.current !== null) {
-      clearTimeout(idleTimer.current)
-      idleTimer.current = null
-    }
-    setThinking(false)
-  }, [])
-
   const invalidateRequests = useCallback(() => {
     requestGeneration.current += 1
     lastCall.current = null
     setBusy(false)
-    setDraft(EMPTY_DRAFT)
-    stopWatchingStall()
-  }, [stopWatchingStall])
+    setThinking(false)
+  }, [])
 
   const persistAndApply = useCallback(
     (next: Snapshot, resume: ResumeAfterSave = 'none'): boolean => {
@@ -166,17 +142,13 @@ export function useGame() {
       setBusy(true)
       setError(null)
       setDraft(EMPTY_DRAFT)
-      stopWatchingStall()
-      watchForStall()
+      setThinking(false)
 
-      /* 流式帧是在 await 期间一帧一帧进来的。请求一旦结束或者已经被更新的一次请求顶掉，
-         迟到的帧必须扔掉，否则上一天写了一半的字会串进下一天的等待屏。 */
-      let settled = false
+      // 流式帧到来时把标题/正文写进草稿，终帧由 readFrames 返回给 result。
       const onFrame: FrameHandler = frame => {
-        if (settled || token !== requestGeneration.current) return
-        setDraft(prev => applyDraftFrame(prev, frame))
+        if (token !== requestGeneration.current) return
         setThinking(false)
-        watchForStall()
+        setDraft(prev => applyDraftFrame(prev, frame))
       }
 
       let result: unknown
@@ -187,14 +159,11 @@ export function useGame() {
         setBusy(false)
         setError({ code: 'NETWORK_ERROR', message: '暂时联系不上服务，当前进度没有改变。', retryable: true })
         return null
-      } finally {
-        settled = true
-        // 只清自己这一次的计时：被新请求顶掉后新请求的计时器已经挂上，旧请求不能去撤它。
-        if (token === requestGeneration.current) stopWatchingStall()
       }
 
       if (token !== requestGeneration.current) return null
       setBusy(false)
+      setThinking(false)
       if (!isApiResult(result)) {
         setError({ code: 'INVALID_RESPONSE', message: '服务返回的数据格式不完整，我没有写入存档。', retryable: true })
         return null
@@ -226,7 +195,7 @@ export function useGame() {
       lastCall.current = null
       return persistAndApply(result.snapshot) ? result.snapshot : null
     },
-    [persistAndApply, stopWatchingStall, watchForStall],
+    [persistAndApply],
   )
 
   const stepFrom = useCallback(
@@ -238,8 +207,6 @@ export function useGame() {
   )
 
   useEffect(() => {
-    // 档案不进快照，所以刷新后要继续这一局时必须先把它交回适配层，否则结局那次生成就丢了档案
-    setProfile(loadProfile())
     const loaded = loadSnapshot()
     if (loaded.kind === 'ok') {
       applySnapshot(loaded.snapshot)
@@ -269,30 +236,20 @@ export function useGame() {
     return () => window.removeEventListener('storage', handleExternalSave)
   }, [invalidateRequests])
 
-  useEffect(
-    () => () => {
-      // 卸载只撤计时器、不碰状态：这时候再 setState 已经没有人接了。
-      if (idleTimer.current !== null) clearTimeout(idleTimer.current)
-    },
-    [],
-  )
-
   const screen: ScreenKey = error
     ? error.retryable
       ? 'errRetry'
       : 'errFatal'
     : !entered || !snapshot
       ? 'start'
-      : busy && snapshot.phase === 'showResult'
-        ? 'generating'
-        : screenOfPhase(snapshot)
+      : screenOfPhase(snapshot)
 
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
-  // 生成完成后沿用同一天的背景，避免装饰层重挂载产生闪动。
-  const scene = sceneFor(day, screen === 'choice' ? 'generating' : screen)
+  const scene = sceneFor(day, screen)
   const storageBlocked = pendingSave !== null
 
-  const startGame = useCallback(() => {
+  // ============ 开始页的「开始第一天」：真正开始游戏 ============
+  const beginGame = useCallback(() => {
     invalidateRequests()
     setError(null)
     setRecoveryRaw(null)
@@ -301,8 +258,20 @@ export function useGame() {
     if (persistAndApply(fresh, 'generateEvent')) void dispatch(fresh, generateEvent)
   }, [dispatch, invalidateRequests, persistAndApply])
 
+  // ============ 结局页的「重新开始两周」：清空所有本地数据，回到开始页 ============
+  const resetToStart = useCallback(() => {
+    invalidateRequests()
+    setError(null)
+    setRecoveryRaw(null)
+    setEntered(false)
+    setDraft(EMPTY_DRAFT)
+    localStorage.clear()
+    clearProfile()
+    applySnapshot(null)
+  }, [invalidateRequests, applySnapshot])
+
   const actions = {
-    start: startGame,
+    start: beginGame,
     resume() {
       if (!snapshot || busy || storageBlocked) return
       setEntered(true)
@@ -333,12 +302,9 @@ export function useGame() {
     dismissError() {
       lastCall.current = null
       setError(null)
-      // 待生成事件那一态的界面是一张没有按钮的骨架屏，只清错误等于把玩家放进去干等，所以退出要退回开始页，
-      // 让玩家从「继续上次的日记」重新发起这一步。pendingEnding 不需要这个特例了：
-      // GamePage 在结尾请求没在飞时渲染的是第 14 篇结算页，那颗「去写结尾」就是这一步的重入口。
       if (currentSnapshot.current?.phase === 'pendingEvent') setEntered(false)
     },
-    restart: startGame,
+    restart: resetToStart,
     runFullWalk() {
       invalidateRequests()
       setError(null)
@@ -376,8 +342,6 @@ export function useGame() {
         setError(STORAGE_UNAVAILABLE)
         return
       }
-      clearProfile()
-      setProfile(null)
       setPendingSave(null)
       setRecoveryRaw(null)
       setError(null)
@@ -405,8 +369,6 @@ export function useGame() {
         setError(STORAGE_UNAVAILABLE)
         return
       }
-      clearProfile()
-      setProfile(null)
       setPendingSave(null)
       setRecoveryRaw(null)
       setError(null)
