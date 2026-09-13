@@ -10,6 +10,12 @@ export const SUPPORTS_FAULT_INJECTION = API_MODE === 'mock'
 /** 玩家档案。由开始页写入，只在会调用模型的两个请求上带一份；
     和下面的 setFault 一样是适配层的模块内状态，页面与状态机都不碰它。 */
 let currentProfile: PlayerProfile | null = null
+let activeRequest: AbortController | null = null
+
+export function cancelPendingRequest() {
+  activeRequest?.abort()
+  activeRequest = null
+}
 
 export function setProfile(profile: PlayerProfile | null) {
   currentProfile = profile
@@ -21,22 +27,40 @@ function bodyWithProfile(requestId: string, snapshot: Snapshot): Record<string, 
 }
 
 async function post(path: string, body: Record<string, unknown>, onFrame?: FrameHandler): Promise<unknown> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-
-  const contentType = response.headers.get('content-type') ?? ''
-  if (contentType.includes('application/x-ndjson')) return readFrames(response, onFrame)
-  if (!contentType.includes('application/json')) {
-    throw new Error(`接口 ${path} 返回了非 JSON 响应`)
+  const controller = new AbortController()
+  activeRequest = controller
+  const totalTimer = setTimeout(() => controller.abort(), path.endsWith('/choose') ? 15000 : 210000)
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  const armIdle = () => {
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => controller.abort(), 75000)
   }
-  return response.json()
+  try {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/x-ndjson')) {
+      armIdle()
+      return await readFrames(response, onFrame, armIdle)
+    }
+    if (!contentType.includes('application/json')) {
+      throw new Error(`接口 ${path} 返回了非 JSON 响应`)
+    }
+    return await response.json()
+  } finally {
+    clearTimeout(totalTimer)
+    clearTimeout(idleTimer)
+    if (activeRequest === controller) activeRequest = null
+  }
 }
 
 /** 逐帧读取。中间帧只交给 onFrame 画在等待卡上，返回值一定是终帧——它才是要进存档的那份完整响应。 */
-async function readFrames(response: Response, onFrame?: FrameHandler): Promise<unknown> {
+async function readFrames(response: Response, onFrame?: FrameHandler, onProgress?: () => void): Promise<unknown> {
   if (!response.body) throw new Error('服务说它要逐帧输出，但这条连接不支持读流')
 
   const parser = createFrameParser()
@@ -46,22 +70,28 @@ async function readFrames(response: Response, onFrame?: FrameHandler): Promise<u
 
   const take = (frames: StreamFrame[]) => {
     for (const frame of frames) {
+      if (frame.k === 'end' || (typeof frame.v === 'string' && frame.v.length > 0)) onProgress?.()
       if (frame.k === 'end') terminal = frame
       else onFrame?.(frame)
     }
   }
 
-  for (;;) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    take(parser.push(decoder.decode(chunk.value, { stream: true })))
-  }
-  take(parser.push(decoder.decode()))
-  take(parser.end())
+  try {
+    while (terminal === null) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      take(parser.push(decoder.decode(chunk.value, { stream: true })))
+    }
+    take(parser.push(decoder.decode()))
+    take(parser.end())
 
-  // 没有终帧就是没写完。抛出去会落进状态机既有的「联系不上服务、进度没变、可重试」分支。
-  if (terminal === null) throw new Error('这页日记写到一半就断了')
-  return terminal
+    // 没有终帧就是没写完。抛出去会落进状态机既有的「联系不上服务、进度没变、可重试」分支。
+    if (terminal === null) throw new Error('这页日记写到一半就断了')
+    return terminal
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
 }
 
 export function setFault(kind: FaultKind) {

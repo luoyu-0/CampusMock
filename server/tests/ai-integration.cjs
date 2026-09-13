@@ -14,6 +14,7 @@ function loadClientModule(relativePath) {
     entryPoints: [path.resolve(__dirname, '../../client/src', relativePath)],
     bundle: true, platform: 'node', format: 'cjs', write: false,
     jsx: 'automatic', external: ['react', 'react/*'],
+    define: { 'import.meta.env': '{}' },
   });
   const module = { exports: {} };
   new Function('module', 'exports', 'require', built.outputFiles[0].text)(module, module.exports, require);
@@ -288,4 +289,154 @@ test('延迟配置、AI 调用、完整结算与结局快照保持兼容', { tim
     upstream.closeAllConnections();
     await Promise.all([server, upstream].map((item) => new Promise((resolve) => item.close(resolve))));
   }
+});
+
+// 针对完整审查发现的边界回归，全部使用内存数据，不调用真实模型。
+test('前端收到终帧立即结束读取，离开流程能够取消挂起请求', async () => {
+  const api = loadClientModule('api/gameApi.ts');
+  const original = global.fetch;
+  let cancelled = false;
+  try {
+    global.fetch = async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"k":"end","requestId":"done"}\n'));
+        // 刻意不关闭流，客户端应以终帧为结束标志。
+      },
+      cancel() { cancelled = true; },
+    }), { headers: { 'Content-Type': 'application/x-ndjson' } });
+    const result = await api.generateEvent(createInitialSnapshot(), 'done');
+    assert.equal(result.requestId, 'done');
+    assert.equal(cancelled, true);
+    global.fetch = (_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new DOMException('已取消', 'AbortError')), { once: true });
+    });
+    const pending = api.generateEvent(createInitialSnapshot(), 'cancel');
+    api.cancelPendingRequest();
+    await assert.rejects(pending, e => e.name === 'AbortError');
+  } finally { global.fetch = original; }
+});
+
+test('空响应不会绕过前端校验；存档被清空或更新后不覆盖其他标签页', () => {
+  const { isApiResult } = loadClientModule('state/useGame.ts');
+  assert.equal(isApiResult({ requestId: 'audit', baseRevision: 0, snapshot: null }), false);
+  const storage = loadClientModule('storage/index.ts');
+  const previous = global.localStorage;
+  const values = new Map();
+  global.localStorage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  };
+  try {
+    const initial = createInitialSnapshot();
+    storage.loadSnapshot();
+    assert.equal(storage.saveSnapshot(initial), true);
+    values.clear();
+    assert.equal(storage.saveSnapshot(initial), false);
+    assert.equal(storage.hasStorageConflict(), true);
+    assert.equal(values.size, 0);
+    storage.loadSnapshot();
+    assert.equal(storage.saveSnapshot(initial), true);
+    values.set(storage.STORAGE_KEY, JSON.stringify({ ...initial, revision: 2 }));
+    assert.equal(storage.saveSnapshot(initial), false);
+    assert.equal(JSON.parse(values.get(storage.STORAGE_KEY)).revision, 2);
+  } finally { global.localStorage = previous; }
+});
+
+test('字段乱序、逐字符分片和转义不影响正文及选项提取', () => {
+  const { createEventStreamParser } = require('../dist/ai/streamParse');
+  const source = {
+    description: '你听见有人说："你好"。\n新的一天。',
+    options: [0, 1, 2].map(() => ({ resultText: '读完一页书。', effects: { money: 500, energy: 0, social: 0, academics: 0 }, text: '去图书馆' })),
+    title: '校园一角',
+  };
+  for (const chunkSize of [1, 2, 7, 999]) {
+    let title = '', description = '';
+    const options = [], results = [];
+    const parser = createEventStreamParser({
+      onTitle: text => title = text, onDescriptionDelta: text => description += text,
+      onOptionText: (i, text) => options[i] = text, onResultText: (i, text) => results[i] = text,
+    });
+    const wire = JSON.stringify(source).replace('你', '\\u4f60');
+    for (let i = 0; i < wire.length; i += chunkSize) parser.feed(wire.slice(i, i + chunkSize));
+    assert.equal(description, source.description);
+    assert.equal(title, source.title);
+    assert.deepEqual(options, source.options.map(o => o.text));
+    assert.deepEqual(results, source.options.map(o => o.resultText));
+  }
+  assert.equal(validateEventOutput(source).options[0].effects.money, 500);
+  source.options[0].effects.money = -500;
+  assert.equal(validateEventOutput(source).options[0].effects.money, -500);
+  source.options[0].effects.money = 501;
+  assert.throws(() => validateEventOutput(source));
+  source.options[0].effects.money = 0;
+  source.description = '今天参加军训。';
+  assert.throws(() => validateEventOutput(source), e => e.code === 'AI_INVALID_OUTPUT');
+});
+
+test('空上游响应分类正确，只有心跳会超时，取消不会触发结局重试', async () => {
+  const { chatJSON, chatJSONStream, chatJSONWithRetry } = require('../dist/ai/deepseek');
+  const original = global.fetch;
+  const cfg = { apiKey: 'mock', baseUrl: 'http://mock', model: 'mock', temperature: 1, timeoutMs: 40, maxAttempts: 3 };
+  try {
+    global.fetch = async () => new Response('null');
+    await assert.rejects(chatJSON(cfg, '', ''), e => e.code === 'AI_UPSTREAM');
+    global.fetch = async (_url, init) => new Response(new ReadableStream({ start(controller) {
+      const ticker = setInterval(() => controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')), 5);
+      init.signal.addEventListener('abort', () => {
+        clearInterval(ticker);
+        controller.error(new DOMException('请求已取消', 'AbortError'));
+      }, { once: true });
+    } }));
+    await assert.rejects(chatJSONStream(cfg, '', '', () => {}), e => e.code === 'AI_TIMEOUT');
+    const abort = new AbortController(); abort.abort();
+    let attempts = 0;
+    global.fetch = async () => { attempts++; return new Response('{}'); };
+    await assert.rejects(chatJSONWithRetry({ ...cfg, signal: abort.signal }, '', () => '', raw => raw));
+    assert.equal(attempts, 0);
+  } finally { global.fetch = original; }
+});
+
+test('并发限制、请求频率、关闭取消和总时限生效', async () => {
+  const { EventEmitter } = require('node:events');
+  const { createGenerationGuard } = require('../dist/game/requestGuard');
+  function response() {
+    const res = new EventEmitter(); res.locals = {};
+    res.setHeader = () => {};
+    res.status = code => { res.code = code; return res; };
+    res.json = body => { res.body = body; return res; };
+    return res;
+  }
+  const guard = createGenerationGuard({ concurrency: 1, perMinute: 2, timeoutMs: 30 });
+  const req = { body: { requestId: 'guard' } };
+  const first = response(); guard(req, first, () => {});
+  const blocked = response(); guard(req, blocked, () => assert.fail('并发已满'));
+  assert.equal(blocked.code, 429);
+  first.emit('close');
+  assert.equal(first.locals.aiSignal.aborted, true);
+  const second = response(); guard(req, second, () => {});
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(second.locals.aiSignal.aborted, true);
+  second.emit('finish'); second.emit('close');
+  const limited = response(); guard(req, limited, () => assert.fail('频率已满'));
+  assert.equal(limited.code, 429);
+});
+
+test('首行空白选项结算有效，重复选择返回既有结果且拒绝改选', () => {
+  const { chooseOption } = require('../dist/game/controller');
+  const snapshot = createInitialSnapshot(); snapshot.phase = 'pendingChoice';
+  snapshot.currentEvent = { id: 'audit', day: 1, title: '校园', description: '校园生活', options: [0, 1, 2].map(i => ({
+    id: String(i), text: '\n 去图书馆 ', resultText: '读完一页书。', effects: { academics: 1, social: 0, energy: 0, money: 500 },
+  })) };
+  const req = { body: { requestId: 'audit', snapshot, eventId: 'audit', optionId: '0' } };
+  let result;
+  const res = { json: value => result = value, status: code => { res.code = code; return res; } };
+  chooseOption(req, res);
+  assert.equal(validateSnapshot(result.snapshot).isValid, true);
+  assert.equal(isSnapshot(result.snapshot), true);
+  const settled = result.snapshot; req.body.snapshot = settled;
+  chooseOption(req, res);
+  assert.deepEqual(result.snapshot, settled);
+  req.body.optionId = '1'; chooseOption(req, res);
+  assert.equal(result.error.code, 'OPTION_MISMATCH');
 });

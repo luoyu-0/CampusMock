@@ -1,6 +1,6 @@
 /* 假数据剧本：只服务本地假 API，真实事件由成员 C 的模型生成后替换掉。
    第 5 天的事件与结局文案是从 design/prototype.html 原样搬来的，其余天数是占位文本，
-   但每项 effects 都落在游戏规则已确认的单次增减范围内（学业社交 −2~+3、精力 −2~+2、金钱 −300~+300），
+   但每项 effects 都落在游戏规则已确认的单次增减范围内（学业社交 −2~+3、精力 −2~+2、金钱 −500~+500），
    所以可以拿它当 B 的结算与分档测试用例。 */
 
 import type { Attributes, Effects, GameEvent, GameOption, Snapshot } from '../state/types'

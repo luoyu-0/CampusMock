@@ -67,7 +67,7 @@ const RANGE: Record<AttributeKey, [number, number]> = {
   academics: [-2, 3],
   social: [-2, 3],
   energy: [-2, 2],
-  money: [-300, 300],
+  money: [-500, 500],
 }
 
 function outOfRange(event: GameEvent): boolean {
