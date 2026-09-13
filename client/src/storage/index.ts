@@ -2,6 +2,9 @@ import { INITIAL_ATTRIBUTES, RULES_VERSION, SCHEMA_VERSION, TOTAL_DAYS } from '.
 import type { Attributes, Effects, GameEvent, Grade, HistoryEntry, Phase, Snapshot } from '../state/types'
 
 export const STORAGE_KEY = 'campusmock:snapshot'
+let expectedRaw: string | null = null
+let storageConflict = false
+export function hasStorageConflict(): boolean { return storageConflict }
 
 export type LoadResult =
   | { kind: 'none' }
@@ -174,6 +177,7 @@ export function loadSnapshot(): LoadResult {
   let raw: string | null
   try {
     raw = localStorage.getItem(STORAGE_KEY)
+    expectedRaw = raw
   } catch {
     return { kind: 'unavailable', raw: null }
   }
@@ -192,8 +196,15 @@ export function loadSnapshot(): LoadResult {
 }
 
 export function saveSnapshot(snapshot: Snapshot): boolean {
+  storageConflict = false
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    if (localStorage.getItem(STORAGE_KEY) !== expectedRaw) {
+      storageConflict = true
+      return false
+    }
+    const raw = JSON.stringify(snapshot)
+    localStorage.setItem(STORAGE_KEY, raw)
+    expectedRaw = raw
     return true
   } catch {
     return false
@@ -203,6 +214,7 @@ export function saveSnapshot(snapshot: Snapshot): boolean {
 export function clearSnapshot(): boolean {
   try {
     localStorage.removeItem(STORAGE_KEY)
+    expectedRaw = null
     return true
   } catch {
     return false

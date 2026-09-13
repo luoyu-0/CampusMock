@@ -12,7 +12,7 @@ server/
     ├── generateEvent.ts           # generateEvent / generateEventStream / generateEventSafe：提示词 → 调用 → 校验 → 分配事件 id 与选项编号 A/B/C（Stream 版边生成边回调推送增量）
     ├── generateEnding.ts          # generateEnding / generateEndingSafe：提示词 → 调用 → 校验 → 结局四字段
     ├── deepseek.ts                # loadAiConfig（读 .env）+ chatJSON / chatJSONStream 请求封装 + chatJSONWithRetry 重试 + AiError
-    ├── streamParse.ts             # 流式增量解析：把模型输出的 JSON 文本实时切成标题与选项文本整体 / 描述增量 / 结果叙述增量（结构偏离自动休眠）
+    ├── streamParse.ts             # 流式增量解析：把模型输出的 JSON 文本实时切成标题与选项文本整体 / 描述增量 / 结果叙述增量（支持字段乱序）
     ├── fallback.ts                # 备用内容：临时性故障重试耗尽时的兜底事件池与结局（数值字数合规）
     ├── validate.ts                # 输出校验：字段/长度/整数/效果范围，违规整体拒绝、不截断
     ├── schema.ts                  # 类型：四维属性、GameEvent、Ending、生成输入
@@ -138,7 +138,7 @@ const event = await generateEventStream(input, cfg, {
 });
 ```
 
-要点：回调推送的内容尚未通过最终校验，以最终返回的 `GameEvent` 为准；流式面为描述 / 结果叙述（逐字增量），标题与选项文本整体回调，effects 是结算数值不推送；resultText 是否提前展示由前端自行决定（可只缓冲所选选项）；流式中即时拦截提示词硬禁词（军训 / 期末）并结束本次生成，等待玩家手动重试；超时按「静默时长」计（沿用 `AI_TIMEOUT_MS`），模型持续出字不算超时；增量解析遇结构偏离自动休眠，正确性由整体校验兜底。转成 SSE 对外暴露的协议草案见 [成员C-AI.md](../../docs/成员-C-AI.md) 的「流式生成」一节。解析器离线回归（不调 API）：`npx tsx src/ai/scripts/stream-parse-test.ts`。演示脚本（本地备料）：`npx tsx src/ai/scripts/stream-demo.ts`。
+要点：回调推送的内容尚未通过最终校验，以最终返回的 `GameEvent` 为准；流式面为描述 / 结果叙述（逐字增量），标题与选项文本整体回调，effects 是结算数值不推送；resultText 是否提前展示由前端自行决定（可只缓冲所选选项）；流式中即时拦截提示词硬禁词（军训 / 期末）并结束本次生成，等待玩家手动重试；无内容超时沿用 `AI_TIMEOUT_MS`，仅收到实际内容时刷新，纯心跳不刷新；流式单次调用另有 120 秒总时限，路由整体生成上限为 180 秒，客户端断开会取消上游。增量解析支持字段乱序，正确性仍由整体校验兜底。转成 SSE 对外暴露的协议草案见 [成员C-AI.md](../../docs/成员-C-AI.md) 的「流式生成」一节。解析器离线回归（不调 API）：`npx tsx src/ai/scripts/stream-parse-test.ts`。演示脚本（本地备料）：`npx tsx src/ai/scripts/stream-demo.ts`。
 
 ### 职责边界
 

@@ -46,6 +46,13 @@ export default function App() {
       )}
       <SceneBackdrop theme={scene} />
       <main className="stage">
+        {snapshot && (
+          <div className="diary-actions">
+            <button type="button" className="rewrite-diary" onClick={actions.forgetSave}>
+              重写日记
+            </button>
+          </div>
+        )}
         {saveFailed && (
           <div className="save-warn" role="alert">
             <span>这一步已经完成，但浏览器暂时写不进存档。进度尚未推进，重试保存不会再次生成内容。</span>
@@ -58,6 +65,7 @@ export default function App() {
         <div className="screen on" key={pageKey}>
           {screen === 'start' && (
             <StartPage
+              key={snapshot?.gameId ?? 'new-diary'}
               saved={snapshot}
               busy={busy}
               onStart={() => actions.start()}

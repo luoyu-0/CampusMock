@@ -74,6 +74,7 @@ function sendSuccess(res: Response, data: SuccessResponse) {
 
 // ============ 工具：处理 AiError ============
 function handleAiError(res: Response, requestId: string, err: unknown) {
+  if (res.destroyed) return;
   if (err instanceof AiError) {
     const codeMap: Record<string, string> = {
       AI_CONFIG: 'AI_CONFIG_ERROR',
@@ -126,7 +127,7 @@ export async function generateEvent(req: Request, res: Response) {
 
   let aiConfig: ReturnType<typeof loadAiConfig>;
   try {
-    aiConfig = loadAiConfig();
+    aiConfig = { ...loadAiConfig(), signal: res.locals.aiSignal };
   } catch (err) {
     return handleAiError(res, requestId, err);
   }
@@ -200,6 +201,7 @@ export async function generateEvent(req: Request, res: Response) {
     res.end();
   } catch (err) {
     // 流已开始，错误也通过终帧传
+    if (res.destroyed) return;
     const errorResponse = buildAiErrorResponse(requestId, err);
     writeFrame(res, { k: 'end', ...errorResponse });
     res.end();
@@ -242,6 +244,11 @@ export function chooseOption(req: Request, res: Response) {
     return sendError(res, requestId, 'INVALID_SNAPSHOT', validation.reason || 'Snapshot validation failed', false);
   }
 
+  const previous = snapshot.history.find((entry) => entry.eventId === eventId);
+  if (previous) {
+    if (previous.optionId !== optionId) return sendError(res, requestId, 'OPTION_MISMATCH', '该事件已选择其他选项', false);
+    return sendSuccess(res, { requestId, baseRevision: snapshot.revision, snapshot });
+  }
   if (isGameCompleted(snapshot)) {
     return sendError(res, requestId, 'GAME_COMPLETED', 'Game already ended', false);
   }
@@ -268,7 +275,7 @@ export function chooseOption(req: Request, res: Response) {
       eventId: snapshot.currentEvent.id,
       optionId: chosenOption.id,
       eventTitle: snapshot.currentEvent.title,
-      chosenText: chosenOption.text.split('\n')[0],
+      chosenText: chosenOption.text.trim().split(/\r?\n/)[0].trim(),
       resultText: chosenOption.resultText,
       effects: chosenOption.effects,
     },
@@ -327,7 +334,7 @@ export async function generateEnding(req: Request, res: Response) {
   const normalizedProfile = normalizeProfile(profile);
 
   try {
-    const aiConfig = loadAiConfig();
+    const aiConfig = { ...loadAiConfig(), signal: res.locals.aiSignal };
     const grades = getGrades(snapshot.attributes);
 
     const endingData = await aiGenerateEnding(

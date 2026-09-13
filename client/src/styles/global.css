@@ -125,6 +125,9 @@ body{
 
 /* ---------- 主舞台 ---------- */
 .stage{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:18px 16px 64px}
+.diary-actions{display:flex;justify-content:flex-end;margin-bottom:12px}
+.rewrite-diary{padding:8px 14px;border:1px solid var(--brand);border-radius:999px;background:var(--paper,#fff);color:var(--brand);font:inherit;font-size:14px;cursor:pointer}
+.rewrite-diary:hover{background:var(--brand);color:#fff}
 .screen{display:none}
 .screen.on{display:block;animation:fade .3s ease}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}

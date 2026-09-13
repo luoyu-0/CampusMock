@@ -17,6 +17,7 @@ export class AiError extends Error {
 }
 
 export interface AiConfig {
+  signal?: AbortSignal;
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -94,7 +95,7 @@ export async function chatJSON(cfg: AiConfig, system: string, user: string): Pro
           max_tokens: 2048,
           temperature: cfg.temperature,
         }),
-        signal: controller.signal,
+        signal: cfg.signal ? AbortSignal.any([controller.signal, cfg.signal]) : controller.signal,
       });
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -129,7 +130,7 @@ export async function chatJSON(cfg: AiConfig, system: string, user: string): Pro
       throw new AiError("AI_UPSTREAM", `${UPSTREAM_MESSAGE}（响应格式异常）`, true);
     }
 
-    const content = data.choices?.[0]?.message?.content;
+    const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.trim() === "") {
       console.warn("[ai] AI_UPSTREAM：响应正文为空");
       throw new AiError("AI_UPSTREAM", `${UPSTREAM_MESSAGE}（响应为空）`, true);
@@ -160,6 +161,7 @@ export async function chatJSONStream(
 ): Promise<string> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const totalTimer = setTimeout(() => controller.abort(), 120000);
   const arm = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
@@ -187,7 +189,7 @@ export async function chatJSONStream(
           temperature: cfg.temperature,
           stream: true,
         }),
-        signal: controller.signal,
+        signal: cfg.signal ? AbortSignal.any([controller.signal, cfg.signal]) : controller.signal,
       });
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -238,10 +240,10 @@ export async function chatJSONStream(
 
     try {
       reading: while (true) {
-        arm();
         const { done, value } = await reader.read();
         if (done) break;
         buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, "\n");
+        if (buffer.length > 128000) throw new AiError('AI_INVALID_OUTPUT', '模型响应帧过长，请重试。', true);
         let sep: number;
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
           const frame = buffer.slice(0, sep);
@@ -249,7 +251,9 @@ export async function chatJSONStream(
           const { content, finished } = consumeFrame(frame);
           if (finished) break reading;
           if (content) {
+            arm();
             full += content;
+            if (full.length > 64000) throw new AiError('AI_INVALID_OUTPUT', '模型输出过长，请重试。', true);
             onDelta(content);
           }
         }
@@ -268,6 +272,7 @@ export async function chatJSONStream(
     }
     return full;
   } finally {
+    clearTimeout(totalTimer);
     if (timer) clearTimeout(timer);
     // 提前退出（含 onDelta 抛错）时中止连接避免套接字悬挂；正常读完后 abort 无副作用
     controller.abort();
@@ -285,6 +290,7 @@ export async function chatJSONWithRetry<T>(
   let lastError = new AiError("AI_UPSTREAM", "模型调用未执行", false);
   let feedback: string | null = null;
   for (let attempt = 1; attempt <= cfg.maxAttempts; attempt++) {
+    if (cfg.signal?.aborted) throw new AiError('AI_TIMEOUT', TIMEOUT_MESSAGE, true);
     try {
       const raw = await chatJSON(cfg, system, buildUser(feedback));
       return validate(raw);
@@ -293,6 +299,7 @@ export async function chatJSONWithRetry<T>(
       // 重试对玩家与接口响应都不可见，这里失败原因的唯一留痕点
       console.warn(`[ai] 第 ${attempt}/${cfg.maxAttempts} 次生成失败（${lastError.code}）：${lastError.message}`);
       if (!lastError.retryable) throw lastError;
+      if (cfg.signal?.aborted) throw lastError;
       if (lastError.code === "AI_INVALID_OUTPUT") feedback = lastError.message;
     }
   }

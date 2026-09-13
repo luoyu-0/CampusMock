@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { chooseOption, generateEnding, generateEvent, setProfile } from '../api/gameApi'
+import { cancelPendingRequest, chooseOption, generateEnding, generateEvent, setProfile } from '../api/gameApi'
 import { EMPTY_DRAFT, applyDraftFrame } from '../api/frames'
 import { DAY_SCRIPT, TOTAL_DAYS, initialSnapshot } from '../api/script'
-import { clearSnapshot, isSnapshot, loadSnapshot, saveSnapshot, STORAGE_KEY } from '../storage'
+import { clearSnapshot, hasStorageConflict, isSnapshot, loadSnapshot, saveSnapshot, STORAGE_KEY } from '../storage'
 import { clearProfile, loadProfile } from './profile'
 import type { FrameHandler, StreamDraft } from '../api/frames'
 import type { ApiError, ApiResult, GameEvent, Snapshot } from './types'
@@ -76,7 +76,7 @@ function createRequestId(): string {
   return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function isApiResult(value: unknown): value is ApiResult {
+export function isApiResult(value: unknown): value is ApiResult {
   if (!value || typeof value !== 'object') return false
   const response = value as Record<string, unknown>
   if (typeof response.requestId !== 'string') return false
@@ -90,7 +90,7 @@ function isApiResult(value: unknown): value is ApiResult {
       typeof (error as Record<string, unknown>).retryable === 'boolean'
     )
   }
-  return Number.isSafeInteger(response.baseRevision) && 'snapshot' in response
+  return Number.isSafeInteger(response.baseRevision) && isSnapshot(response.snapshot)
 }
 
 /* 「在想」只能靠时间猜：服务端不告诉我们它写到哪、卡在哪，只看上一帧离现在多久。
@@ -139,6 +139,7 @@ export function useGame() {
 
   const invalidateRequests = useCallback(() => {
     requestGeneration.current += 1
+    cancelPendingRequest()
     lastCall.current = null
     setBusy(false)
     setDraft(EMPTY_DRAFT)
@@ -148,6 +149,11 @@ export function useGame() {
   const persistAndApply = useCallback(
     (next: Snapshot, resume: ResumeAfterSave = 'none'): boolean => {
       if (!saveSnapshot(next)) {
+        if (hasStorageConflict()) {
+          setPendingSave(null)
+          setError(EXTERNAL_CHANGE)
+          return false
+        }
         setPendingSave({ snapshot: next, resume })
         return false
       }
@@ -161,6 +167,7 @@ export function useGame() {
   const dispatch = useCallback(
     async (base: Snapshot, call: ApiCall): Promise<Snapshot | null> => {
       const token = ++requestGeneration.current
+      cancelPendingRequest()
       const requestId = createRequestId()
       lastCall.current = { base, call }
       setBusy(true)
@@ -218,10 +225,6 @@ export function useGame() {
         setError({ code: 'REVISION_CONFLICT', message: '这一步的响应回来晚了，我没有采纳它。', retryable: true })
         return null
       }
-      if (!isSnapshot(result.snapshot)) {
-        setError({ code: 'INVALID_RESPONSE', message: '服务返回的数据不完整，我没有写入存档。', retryable: true })
-        return null
-      }
 
       lastCall.current = null
       return persistAndApply(result.snapshot) ? result.snapshot : null
@@ -258,7 +261,7 @@ export function useGame() {
 
   useEffect(() => {
     const handleExternalSave = (event: StorageEvent) => {
-      if (event.key !== STORAGE_KEY || event.storageArea !== localStorage) return
+      if ((event.key !== null && event.key !== STORAGE_KEY) || event.storageArea !== localStorage) return
       invalidateRequests()
       setPendingSave(null)
       setRecoveryRaw(event.newValue)
@@ -273,6 +276,8 @@ export function useGame() {
     () => () => {
       // 卸载只撤计时器、不碰状态：这时候再 setState 已经没有人接了。
       if (idleTimer.current !== null) clearTimeout(idleTimer.current)
+      requestGeneration.current += 1
+      cancelPendingRequest()
     },
     [],
   )
@@ -324,7 +329,14 @@ export function useGame() {
     },
     retrySave() {
       const pending = pendingSave
-      if (!pending || busy || !saveSnapshot(pending.snapshot)) return
+      if (!pending || busy) return
+      if (!saveSnapshot(pending.snapshot)) {
+        if (hasStorageConflict()) {
+          setPendingSave(null)
+          setError(EXTERNAL_CHANGE)
+        }
+        return
+      }
       setPendingSave(null)
       applySnapshot(pending.snapshot)
       if (pending.resume === 'generateEvent') void dispatch(pending.snapshot, generateEvent)

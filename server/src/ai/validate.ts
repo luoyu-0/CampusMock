@@ -1,6 +1,7 @@
 import { AiError } from "./deepseek.js";
 import { EFFECT_RANGES, ENDING_TEXT_LIMITS, OPTION_COUNT, TEXT_LIMITS } from "./prompts/values.js";
 import { ATTRIBUTE_KEYS, type Attributes, type EventOption } from "./schema.js";
+import { checkStreamViolation } from './streamParse.js';
 
 export interface EventContent {
   title: string;
@@ -39,6 +40,10 @@ export function validateEventOutput(raw: unknown): EventContent {
 
   if (problems.length > 0) {
     throw new AiError("AI_INVALID_OUTPUT", `模型输出校验未通过：${problems.join("；")}`, true);
+  }
+  for (const text of [title, description, ...options.flatMap(option => [option.text, option.resultText])]) {
+    const violation = checkStreamViolation(text);
+    if (violation) throw new AiError('AI_INVALID_OUTPUT', violation, true);
   }
   return { title, description, options };
 }
