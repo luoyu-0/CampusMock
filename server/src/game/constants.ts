@@ -40,7 +40,7 @@ export const EFFECT_RANGES: Record<keyof Attributes, { min: number; max: number 
   academics: { min: -2, max: 3 },
   social: { min: -2, max: 3 },
   energy: { min: -2, max: 2 },
-  money: { min: -300, max: 300 },
+  money: { min: -500, max: 500 },
 };
 
 // ---------- 默认事件选项数量 ----------

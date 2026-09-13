@@ -17,7 +17,7 @@ const EFFECT_RANGES: Record<keyof Effects, readonly [number, number]> = {
   academics: [-2, 3],
   social: [-2, 3],
   energy: [-2, 2],
-  money: [-300, 300],
+  money: [-500, 500],
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
