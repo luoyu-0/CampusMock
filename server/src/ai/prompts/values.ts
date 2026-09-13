@@ -16,8 +16,8 @@ export const TEXT_LIMITS = {
 // 结局文本长度上限为草案值，实测后调整
 export const ENDING_TEXT_LIMITS = {
   title: 30,
-  description: 400,
-  evaluation: 200,
+  description: 450,
+  evaluation: 250,
   advice: 150,
 } as const;
 
