@@ -21,13 +21,16 @@ export interface StreamFrame {
 
 export type FrameHandler = (frame: StreamFrame) => void
 
-/** 标题与正文的临时草稿：事件生成期间显示在等待卡上，终帧一到就被真快照取代。 */
+/** 标题与正文的临时草稿：事件生成期间显示在等待卡上，终帧一到就被真快照取代。
+   fresh / chunk 只为"刚到那几个字洇一下墨"服务（界面靠 chunk 当 key 重放动画），不进存档。 */
 export interface StreamDraft {
   title: string
   description: string
+  fresh: string
+  chunk: number
 }
 
-export const EMPTY_DRAFT: StreamDraft = { title: '', description: '' }
+export const EMPTY_DRAFT: StreamDraft = { title: '', description: '', fresh: '', chunk: 0 }
 
 /** 拿到一帧后怎么并入草稿。不认识的名字原样返回，草稿不变。 */
 export function applyDraftFrame(draft: StreamDraft, frame: StreamFrame): StreamDraft {
@@ -35,7 +38,8 @@ export function applyDraftFrame(draft: StreamDraft, frame: StreamFrame): StreamD
   const text = typeof frame.v === 'string' ? frame.v : null
   if (text === null) return draft
   if (frame.k === 'title') return { ...draft, title: text }
-  if (frame.k === 'desc') return { ...draft, description: draft.description + text }
+  if (frame.k === 'desc')
+    return { ...draft, description: draft.description + text, fresh: text, chunk: draft.chunk + 1 }
   return draft
 }
 

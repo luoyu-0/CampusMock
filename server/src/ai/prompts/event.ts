@@ -28,7 +28,7 @@ const SYSTEM_PROMPT = `你是文字游戏《我的大学日记》的事件生成
 
 硬性约束：
 - title 不超过 ${TEXT_LIMITS.title} 字；description 不超过 ${TEXT_LIMITS.description} 字；每个 text 不超过 ${TEXT_LIMITS.optionText} 字；每个 resultText 不超过 ${TEXT_LIMITS.resultText} 字。
-- effects 四个属性都必须给出整数，未受影响的属性填 0。
+- effects 必须完整包含 academics、social、energy、money 四个字段，值必须是 JSON 整数（如 0、1、-1），禁止字符串、小数、null、文字或省略字段。未受影响的属性明确填 0，发送前检查每个选项的四个字段。
 - 取值范围：${RANGE_TEXT}，越界视为无效输出。
 - 背景设定：军训安排在入学两周之后，这两周不参加军训，任何文本不得出现军训；这两周也是学期开端，不得出现期末考试、期末论文等学期末才有的安排。
 - 玩家档案：用户消息中给出的性别与专业是玩家固定信息，不得更改，也不得杜撰与之矛盾的其他固定信息（如另一个专业）；室友、同学等 NPC 与具体故事细节可自由虚构。

@@ -11,8 +11,13 @@ const GAME_SCREENS = ['generating', 'choice', 'result', 'endingPending']
 const SHOW_PROTO_BAR = import.meta.env.DEV || import.meta.env.VITE_ENABLE_PROTO_BAR === 'true'
 
 export default function App() {
-  const { screen, snapshot, busy, error, scene, draft, saveFailed, canExportBrokenSave, actions } = useGame()
+  const { screen, snapshot, busy, error, scene, draft, thinking, saveFailed, canExportBrokenSave, actions } =
+    useGame()
   const [showNotes, setShowNotes] = useState(false)
+  // 同一天从流式草稿进入选择阶段时，保留页面与滚动位置。
+  const pageKey = screen === 'generating' || screen === 'choice'
+    ? `event-${snapshot?.gameId}-${(snapshot?.history.length ?? 0) + 1}`
+    : screen
 
   useEffect(() => {
     document.body.classList.toggle('show-notes', showNotes)
@@ -20,7 +25,7 @@ export default function App() {
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
-  }, [screen])
+  }, [pageKey])
 
   const inGame = snapshot !== null && GAME_SCREENS.includes(screen)
   const interactionBlocked = busy || saveFailed
@@ -49,8 +54,8 @@ export default function App() {
             </button>
           </div>
         )}
-        {/* key={screen} 让每次换屏重挂载一次，global.css 里 .screen.on 的 0.3s 淡入因此仍然成立 */}
-        <div className="screen on" key={screen}>
+        {/* 仅跨页面时重挂载；流式完成不重播整页淡入动画。 */}
+        <div className="screen on" key={pageKey}>
           {screen === 'start' && (
             <StartPage
               saved={snapshot}
@@ -60,7 +65,14 @@ export default function App() {
             />
           )}
           {inGame && snapshot && (
-            <GamePage snapshot={snapshot} busy={interactionBlocked} waiting={busy} draft={draft} actions={actions} />
+            <GamePage
+              snapshot={snapshot}
+              busy={interactionBlocked}
+              waiting={busy}
+              draft={draft}
+              thinking={thinking}
+              actions={actions}
+            />
           )}
           {screen === 'ending' && snapshot && <EndingPage snapshot={snapshot} onRestart={() => actions.restart()} />}
           {(screen === 'errRetry' || screen === 'errFatal') && error && (

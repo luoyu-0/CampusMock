@@ -1,5 +1,5 @@
 import { Chrome, HistoryList, chromeDay, chromeTitle } from '../components/Chrome'
-import { EndingWaitingCard, EventCard, EventWaitingCard, ResultCard } from '../components/Cards'
+import { EndingWaitingCard, EventCard, ResultCard } from '../components/Cards'
 import { TOTAL_DAYS } from '../api/script'
 import type { StreamDraft } from '../api/frames'
 import type { Snapshot } from '../state/types'
@@ -11,14 +11,17 @@ export function GamePage({
   busy,
   waiting,
   draft,
+  thinking = false,
   actions,
 }: {
   snapshot: Snapshot
   busy: boolean
-  /** 请求在飞时切换到下一天的事件等待页，或结局等待页。 */
+  /** 请求在飞时把结算页换成下一天的生成中卡片，或换成结局等待页。 */
   waiting: boolean
-  /** 流式草稿只用于待生成事件页。 */
+  /** 只在生成中那几秒生效的流式草稿：终帧一到就被真快照取代。 */
   draft?: StreamDraft
+  /** 上一帧已经等了一会儿：笔尖改成原地点触。 */
+  thinking?: boolean
   actions: GameActions
 }) {
   const { history, currentEvent } = snapshot
@@ -28,7 +31,7 @@ export function GamePage({
   const lastEntry = history[history.length - 1]
   const isLastDay = history.length >= TOTAL_DAYS
   /* 第 14 天结算后服务端与 mock 都直接返回 pendingEnding（不是 showResult），这一屏要同时吃两个 phase：
-     只有结尾请求真的在飞时才换成等待卡，否则必须把「去写结尾」摆出来——不然玩家面对的是一张没有控件的骨架屏。 */
+     只有结尾请求真的在飞时才换成等待卡，否则必须把「去写结尾」摆出来——不然玩家面对的是一张没有控件的等待屏。 */
   const settledScreen = phase === 'showResult' || (phase === 'pendingEnding' && !waiting)
 
   return (
@@ -40,15 +43,16 @@ export function GamePage({
         dots={day}
       />
 
-      {phase === 'pendingEvent' && <EventWaitingCard draft={draft} />}
-
-      {phase === 'pendingChoice' && currentEvent && (
+      {(phase === 'pendingEvent' || phase === 'pendingChoice') && (
         <>
           <HistoryList history={history} />
           <EventCard
-            event={currentEvent}
+            event={phase === 'pendingChoice' ? currentEvent : null}
+            day={day}
+            draft={draft}
+            thinking={thinking}
             disabled={busy}
-            onChoose={optionId => actions.choose(currentEvent, optionId)}
+            onChoose={optionId => currentEvent && actions.choose(currentEvent, optionId)}
           />
         </>
       )}

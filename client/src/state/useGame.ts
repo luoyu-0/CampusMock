@@ -93,6 +93,11 @@ function isApiResult(value: unknown): value is ApiResult {
   return Number.isSafeInteger(response.baseRevision) && 'snapshot' in response
 }
 
+/* 「在想」只能靠时间猜：服务端不告诉我们它写到哪、卡在哪，只看上一帧离现在多久。
+   假服务两帧之间最多两百来毫秒（mockApi 把 420~1150ms 均分给六七帧），1.2 秒远在它之上，
+   所以离线走查里不会一闪一闪地切进思考态。真模型第一帧要等多久我没测过，可能超过这个阈值。 */
+const FRAME_IDLE_MS = 1200
+
 export function useGame() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
@@ -102,14 +107,34 @@ export function useGame() {
   const [recoveryRaw, setRecoveryRaw] = useState<string | null>(null)
   /** 只在事件生成的那几秒存在：流式帧写进来的标题与正文草稿。不进快照、不进 localStorage。 */
   const [draft, setDraft] = useState<StreamDraft>(EMPTY_DRAFT)
+  /** 笔尖"停一下在想"：请求在飞，但上一帧已经等了一阵子（或者一帧都没来过）。同样不进存档。 */
+  const [thinking, setThinking] = useState(false)
 
   const currentSnapshot = useRef<Snapshot | null>(null)
   const requestGeneration = useRef(0)
   const lastCall = useRef<{ base: Snapshot; call: ApiCall } | null>(null)
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const applySnapshot = useCallback((next: Snapshot | null) => {
     currentSnapshot.current = next
     setSnapshot(next)
+  }, [])
+
+  /** 重新计时：请求刚发起、每来一帧都算"还在写"。到点还没动静就把笔尖切进思考态。 */
+  const watchForStall = useCallback(() => {
+    if (idleTimer.current !== null) clearTimeout(idleTimer.current)
+    idleTimer.current = setTimeout(() => {
+      idleTimer.current = null
+      setThinking(true)
+    }, FRAME_IDLE_MS)
+  }, [])
+
+  const stopWatchingStall = useCallback(() => {
+    if (idleTimer.current !== null) {
+      clearTimeout(idleTimer.current)
+      idleTimer.current = null
+    }
+    setThinking(false)
   }, [])
 
   const invalidateRequests = useCallback(() => {
@@ -117,7 +142,8 @@ export function useGame() {
     lastCall.current = null
     setBusy(false)
     setDraft(EMPTY_DRAFT)
-  }, [])
+    stopWatchingStall()
+  }, [stopWatchingStall])
 
   const persistAndApply = useCallback(
     (next: Snapshot, resume: ResumeAfterSave = 'none'): boolean => {
@@ -140,6 +166,8 @@ export function useGame() {
       setBusy(true)
       setError(null)
       setDraft(EMPTY_DRAFT)
+      stopWatchingStall()
+      watchForStall()
 
       /* 流式帧是在 await 期间一帧一帧进来的。请求一旦结束或者已经被更新的一次请求顶掉，
          迟到的帧必须扔掉，否则上一天写了一半的字会串进下一天的等待屏。 */
@@ -147,6 +175,8 @@ export function useGame() {
       const onFrame: FrameHandler = frame => {
         if (settled || token !== requestGeneration.current) return
         setDraft(prev => applyDraftFrame(prev, frame))
+        setThinking(false)
+        watchForStall()
       }
 
       let result: unknown
@@ -159,6 +189,8 @@ export function useGame() {
         return null
       } finally {
         settled = true
+        // 只清自己这一次的计时：被新请求顶掉后新请求的计时器已经挂上，旧请求不能去撤它。
+        if (token === requestGeneration.current) stopWatchingStall()
       }
 
       if (token !== requestGeneration.current) return null
@@ -194,7 +226,7 @@ export function useGame() {
       lastCall.current = null
       return persistAndApply(result.snapshot) ? result.snapshot : null
     },
-    [persistAndApply],
+    [persistAndApply, stopWatchingStall, watchForStall],
   )
 
   const stepFrom = useCallback(
@@ -237,6 +269,14 @@ export function useGame() {
     return () => window.removeEventListener('storage', handleExternalSave)
   }, [invalidateRequests])
 
+  useEffect(
+    () => () => {
+      // 卸载只撤计时器、不碰状态：这时候再 setState 已经没有人接了。
+      if (idleTimer.current !== null) clearTimeout(idleTimer.current)
+    },
+    [],
+  )
+
   const screen: ScreenKey = error
     ? error.retryable
       ? 'errRetry'
@@ -248,7 +288,8 @@ export function useGame() {
         : screenOfPhase(snapshot)
 
   const day = snapshot ? Math.min(snapshot.history.length + 1, TOTAL_DAYS) : 1
-  const scene = sceneFor(day, screen)
+  // 生成完成后沿用同一天的背景，避免装饰层重挂载产生闪动。
+  const scene = sceneFor(day, screen === 'choice' ? 'generating' : screen)
   const storageBlocked = pendingSave !== null
 
   const startGame = useCallback(() => {
@@ -381,6 +422,7 @@ export function useGame() {
     error,
     scene,
     draft,
+    thinking,
     saveFailed: storageBlocked,
     canExportBrokenSave: recoveryRaw !== null,
     actions,

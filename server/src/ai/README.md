@@ -82,7 +82,7 @@ const ending = await generateEnding(
 
 ### 错误处理
 
-超时、限流、无效输出等可重试错误已在函数内自动重试（最多 `AI_MAX_ATTEMPTS` 次）：**校验失败会把问题清单注入下一次提示词让模型自纠**，最终失败才抛出；每次尝试失败都会在服务端控制台留一行 `[ai]` 日志（第几次、错误码、原因），判断「生成慢」是否因重试在跑就从这里看；路由层按 `code` 映射到接口约定的错误响应。`message` 按《我的大学日记》的日记体玩家文风书写、句末括号带简短原因（如「心神不定，不知如何落笔（未配置API密钥）」「写着写着，笔没了墨（HTTP 502）」）——controller 对 `AiError` 是 `err.message` 原样透传上屏（仅 code 改名：`AI_CONFIG→AI_CONFIG_ERROR`、`AI_UPSTREAM→AI_UPSTREAM_ERROR`，其余原名），完整技术细节进 `console.warn`（`[ai]` 前缀）；唯一例外是 `AI_INVALID_OUTPUT`，它的 message 同时是注入下一轮提示词的自纠反馈，必须保持具体。
+事件生成遇到超时、限流、无效输出时立即抛出错误，由玩家手动重试，每次操作只调用一次模型。以下自动重试策略仅适用于结局：可重试错误在函数内自动重试（最多 `AI_MAX_ATTEMPTS` 次）：**校验失败会把问题清单注入下一次提示词让模型自纠**，最终失败才抛出；每次尝试失败都会在服务端控制台留一行 `[ai]` 日志（第几次、错误码、原因），判断「生成慢」是否因重试在跑就从这里看；路由层按 `code` 映射到接口约定的错误响应。
 
 ```ts
 try {
@@ -110,7 +110,7 @@ catch (err) {
 
 接路由建议用原始版本（错误如实上屏）；Safe 兜底是可选的降级策略，适合「临时故障不想中断游戏」的场景（见下）。
 
-若希望临时性故障（超时/限流/上游 5xx/输出不合法）不中断游戏，可改用 Safe 版本：可重试错误重试耗尽后返回备用事件/结局（`usedFallback=true` 并附原始错误），**配置类错误仍然抛出**：
+若希望临时性故障（超时/限流/上游 5xx/输出不合法）不中断游戏，可改用 Safe 版本：事件单次调用失败或结局重试耗尽后返回备用内容（游戏路由不使用 Safe 入口）（`usedFallback=true` 并附原始错误），**配置类错误仍然抛出**：
 
 ```ts
 import { generateEventSafe } from "../ai/index.js";
@@ -130,7 +130,6 @@ const event = result.value; // 结构与 generateEvent 返回值一致
 import { generateEventStream } from "../ai/index.js";
 
 const event = await generateEventStream(input, cfg, {
-  onRetry: (attempt) => {},                // 第 2 次尝试开始前触发：清空上一轮已显示内容（已打出的字无法撤回）
   onTitle: (title) => {},                  // 标题闭合（整体一次）
   onDescriptionDelta: (delta) => {},       // 描述增量（已反转义）
   onOptionText: (index, text) => {},       // 选项文本整条弹出（index 0～2，A→B→C 依次）
@@ -139,7 +138,7 @@ const event = await generateEventStream(input, cfg, {
 });
 ```
 
-要点：回调推送的内容尚未通过最终校验，以最终返回的 `GameEvent` 为准；流式面为描述 / 结果叙述（逐字增量），标题与选项文本整体回调，effects 是结算数值不推送；resultText 是否提前展示由前端自行决定（可只缓冲所选选项）；流式中即时拦截提示词硬禁词（军训 / 期末）并带反馈重试；超时按「静默时长」计（沿用 `AI_TIMEOUT_MS`），模型持续出字不算超时；增量解析遇结构偏离自动休眠，正确性由整体校验兜底。转成 SSE 对外暴露的协议草案见 [成员C-AI.md](../../docs/成员-C-AI.md) 的「流式生成」一节。解析器离线回归（不调 API）：`npx tsx src/ai/scripts/stream-parse-test.ts`。演示脚本（本地备料）：`npx tsx src/ai/scripts/stream-demo.ts`。
+要点：回调推送的内容尚未通过最终校验，以最终返回的 `GameEvent` 为准；流式面为描述 / 结果叙述（逐字增量），标题与选项文本整体回调，effects 是结算数值不推送；resultText 是否提前展示由前端自行决定（可只缓冲所选选项）；流式中即时拦截提示词硬禁词（军训 / 期末）并结束本次生成，等待玩家手动重试；超时按「静默时长」计（沿用 `AI_TIMEOUT_MS`），模型持续出字不算超时；增量解析遇结构偏离自动休眠，正确性由整体校验兜底。转成 SSE 对外暴露的协议草案见 [成员C-AI.md](../../docs/成员-C-AI.md) 的「流式生成」一节。解析器离线回归（不调 API）：`npx tsx src/ai/scripts/stream-parse-test.ts`。演示脚本（本地备料）：`npx tsx src/ai/scripts/stream-demo.ts`。
 
 ### 职责边界
 
@@ -151,8 +150,8 @@ const event = await generateEventStream(input, cfg, {
 
 | 要复现的错误 | 配方 | 预期 |
 | --- | --- | --- |
-| `AI_TIMEOUT`（可重试） | `.env` 设 `AI_TIMEOUT_MS=1`（纯数字） | 每次请求立即超时，重试耗尽后报错，`retryable=true` |
-| `AI_INVALID_OUTPUT`（可重试） | `npm run fake:relay` 起本地假中转站（默认 8787），`.env` 改 `DEEPSEEK_BASE_URL=http://127.0.0.1:8787/v1` 后重启后端 | 每次「模型输出」都缺 options，校验拒满 3 次后报 `AI_INVALID_OUTPUT`，`retryable=true` |
+| `AI_TIMEOUT`（可重试） | `.env` 设 `AI_TIMEOUT_MS=1`（纯数字） | 事件请求超时后立即报错，`retryable=true` |
+| `AI_INVALID_OUTPUT`（可重试） | `npm run fake:relay` 起本地假中转站（默认 8787），`.env` 改 `DEEPSEEK_BASE_URL=http://127.0.0.1:8787/v1` 后重启后端 | 每次「模型输出」都缺 options，事件校验拒绝后立即报 `AI_INVALID_OUTPUT`，`retryable=true` |
 | `AI_CONFIG`（不可重试） | 假中转站换 `npm run fake:relay -- --mode 401`（或把 `DEEPSEEK_API_KEY` 改成无效值打真站） | 401 → `AI_CONFIG`，不重试直接报错，`retryable=false` |
 
 测完把 `.env` 还原：思考型模型建议 `AI_TIMEOUT_MS=240000`，`DEEPSEEK_BASE_URL` 改回中转站地址。
