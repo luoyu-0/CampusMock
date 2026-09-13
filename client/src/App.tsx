@@ -11,7 +11,8 @@ const GAME_SCREENS = ['generating', 'choice', 'result', 'endingPending']
 const SHOW_PROTO_BAR = import.meta.env.DEV || import.meta.env.VITE_ENABLE_PROTO_BAR === 'true'
 
 export default function App() {
-  const { screen, snapshot, busy, error, scene, draft, saveFailed, canExportBrokenSave, actions } = useGame()
+  const { screen, snapshot, busy, error, scene, draft, thinking, saveFailed, canExportBrokenSave, actions } =
+    useGame()
   const [showNotes, setShowNotes] = useState(false)
   // 同一天从流式草稿进入选择阶段时，保留页面与滚动位置。
   const pageKey = screen === 'generating' || screen === 'choice'
@@ -64,7 +65,14 @@ export default function App() {
             />
           )}
           {inGame && snapshot && (
-            <GamePage snapshot={snapshot} busy={interactionBlocked} waiting={busy} draft={draft} actions={actions} />
+            <GamePage
+              snapshot={snapshot}
+              busy={interactionBlocked}
+              waiting={busy}
+              draft={draft}
+              thinking={thinking}
+              actions={actions}
+            />
           )}
           {screen === 'ending' && snapshot && <EndingPage snapshot={snapshot} onRestart={() => actions.restart()} />}
           {(screen === 'errRetry' || screen === 'errFatal') && error && (
